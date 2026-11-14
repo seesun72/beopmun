@@ -11,7 +11,9 @@ service cloud.firestore {
         && request.resource.data.text is string && request.resource.data.text.size() <= 4000
         && request.resource.data.source is string && request.resource.data.source.size() <= 200
         && request.resource.data.reason is string && request.resource.data.reason.size() <= 2000
-        && request.resource.data.note is string && request.resource.data.note.size() <= 6000;
+        && request.resource.data.note is string && request.resource.data.note.size() <= 6000
+        && request.resource.data.pid is string && request.resource.data.pid.size() <= 80
+        && request.resource.data.at is number && request.resource.data.updatedAt is number;
     }
     match /{document=**} { allow read, write: if false; }
   }

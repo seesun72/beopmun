@@ -129,6 +129,7 @@ nav .sm{display:none}
   nav .lg{display:none} nav .sm{display:inline}
   .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 }
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -216,7 +217,6 @@ const store = {
   writeLocal(){ try{ localStorage.setItem("beopmun.v1", JSON.stringify(this.mem)); return true; }catch(e){ return false; } },
   loadScript(src){ return new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = no; document.head.append(el); }); },
   async init(){
-    this.readLocal();
     const cfg = window.BEOPMUN_FIREBASE;
     if (!cfg || !cfg.apiKey || !cfg.projectId) return;
     try{
@@ -269,9 +269,10 @@ function fail(e){
     : "서버에 닿지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.", true);
 }
 async function act(fn){
-  if (S.busy) return; S.busy = true; say("");
+  if (S.busy) return; S.busy = true; S.warn = ""; say("");
   try{ await fn(); }catch(e){ fail(e); }
   S.busy = false; render();
+  if (S.warn){ say(S.warn, true); S.warn = ""; }
 }
 
 /* ───── 오늘의 법문 ───── */
@@ -344,14 +345,15 @@ function entryCard(key, e, isToday){
     const tools = [h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; openSheet({pid:e.pid, date:key, edit:true}); }}, "원문 펼쳐 고쳐 적기")];
     if (isToday && store.canShare) tools.push(h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(async () => {
       const ne = {...e, shared:!e.shared, updatedAt:Date.now()};
-      await store.putUser("j-" + key, ne);
       if (ne.shared) await store.putFeed(feedDoc(ne)); else await store.delFeed();
+      await store.putUser("j-" + key, ne);
       S.user["j-" + key] = ne; setSharePref(ne.shared);
     })}, e.shared ? "나누기 그만두기" : "함께 읽기에 나누기"));
     if (S.confirmDel === key){
       tools.push(h("span", {class:"note"}, isToday ? "지우면 오늘 법문을 다시 고를 수 있습니다." : "이 날의 기록을 지울까요?"),
         h("button", {class:"btn small danger", type:"button", disabled:S.busy, onclick: () => act(async () => {
-          await store.delUser("j-" + key); if (e.shared) await store.delFeed(); delete S.user["j-" + key]; S.confirmDel = null;
+          if (e.shared && isToday) await store.delFeed();
+          await store.delUser("j-" + key); delete S.user["j-" + key]; S.confirmDel = null;
         })}, "지우기"),
         h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; render(); }}, "두기"));
     } else {
@@ -366,17 +368,27 @@ function backupCard(){
     h("summary", null, "기록 내보내기 · 불러오기"),
     h("p", {class:"note"}, "기록은 이 폰에만 저장됩니다. 폰을 바꾸거나 앱을 지우기 전에 내보내 두었다가 새 폰에서 불러오세요."),
     h("div", {class:"row"},
-      h("button", {class:"btn small", type:"button", onclick: () => {
-        const blob = new Blob([JSON.stringify({app:"beopmun", v:1, exported:new Date().toISOString(), user:S.user}, null, 1)], {type:"application/json"});
-        const a = h("a", {href:URL.createObjectURL(blob), download:`내마음의법문-${dayKey()}.json`}); document.body.append(a); a.click(); a.remove();
+      h("button", {class:"btn small", type:"button", onclick: async () => {
+        const name = `내마음의법문-${dayKey()}.json`;
+        const body = JSON.stringify({app:"beopmun", v:1, exported:new Date().toISOString(), user:S.user}, null, 1);
+        const blob = new Blob([body], {type:"application/json"});
+        try{
+          const file = new File([blob], name, {type:"application/json"});
+          if (navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:"내 마음의 법문 기록"}); return; }
+        }catch(e){ if (e && e.name === "AbortError") return; }
+        const url = URL.createObjectURL(blob);
+        const a = h("a", {href:url, download:name}); document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
       }}, "내보내기"),
-      h("label", {class:"btn small", for:"f-import", style:"display:inline-block"}, "불러오기"),
-      h("input", {id:"f-import", type:"file", accept:".json,application/json", style:"display:none", onchange: ev => {
+      h("button", {class:"btn small", type:"button", onclick: () => document.getElementById("f-import").click()}, "불러오기"),
+      h("input", {id:"f-import", type:"file", accept:".json,application/json", class:"visually-hidden", tabindex:"-1", "aria-hidden":"true", onchange: ev => {
         const f = ev.target.files && ev.target.files[0]; if (!f) return;
         f.text().then(t => { const d = JSON.parse(t); if (!d || d.app !== "beopmun" || typeof d.user !== "object") throw 0;
-          let n = 0; Object.keys(d.user).forEach(k => { if (/^j-\d{4}-\d{2}-\d{2}$/.test(k) && !S.user[k]){ S.user[k] = d.user[k]; store.mem.user[k] = d.user[k]; n++; } });
+          let n = 0; Object.keys(d.user).forEach(k => { const v = d.user[k];
+            if (/^j-\d{4}-\d{2}-\d{2}$/.test(k) && !S.user[k] && v && typeof v.text === "string"){ const c = {...v, shared:false}; S.user[k] = c; store.mem.user[k] = c; n++; } });
           store.writeLocal(); say(`기록 ${n}일을 불러왔습니다. 같은 날짜에 이미 있는 기록은 그대로 두었습니다.`); render(); })
-        .catch(() => say("이 파일은 내 마음의 법문 기록이 아닙니다.", true));
+        .catch(() => say("이 파일은 내 마음의 법문 기록이 아닙니다.", true))
+        .finally(() => { ev.target.value = ""; });
       }})));
 }
 function viewJournal(){
@@ -510,7 +522,23 @@ function startFeed(){
     if (currentView() === "together" && !S.sheet) render();
   }, err => { clearTimeout(F.timer); F.state = "error"; if (currentView() === "together") render(); });
 }
-setInterval(() => { if (S.ready && S.feed.date && S.feed.date !== dayKey()) { startFeed(); render(); } }, 60000);
+let shownDay = null;
+async function checkNewDay(){
+  if (!S.ready) return;
+  const k = dayKey();
+  if (k === shownDay) return;
+  shownDay = k;
+  document.getElementById("date").textContent = dayText(k);
+  if (S.sheet && !S.sheet.edit && S.sheet.date !== k) closeSheet();
+  if (S.quiz && S.quiz.chosen != null) S.quiz = null;
+  await ensureDraw();
+  if (store.db) startFeed();
+  render();
+}
+setInterval(checkNewDay, 30000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkNewDay(); });
+addEventListener("pageshow", checkNewDay);
+addEventListener("focus", checkNewDay);
 function timeText(ms){ const d = new Date(ms); return isNaN(d) ? "" : `${d.getHours() < 12 ? "오전" : "오후"} ${((d.getHours() + 11) % 12) + 1}:${pad(d.getMinutes())}`; }
 function viewTogether(){
   const F = S.feed, items = F.items;
@@ -521,7 +549,7 @@ function viewTogether(){
   if (F.state === "error") return out.concat(h("p", {class:"lead"}, "나눈 글을 불러오지 못했습니다. 화면을 다시 열어 주세요."));
   if (F.state === "slow" && !items.length) return out.concat(h("p", {class:"lead"}, "나눈 글에 아직 닿지 못했습니다. 연결이 되면 저절로 나타납니다."));
   out.push(h("p", {class:"lead"}, items.length ? `오늘 ${items.length}명이 이름 없이 법문을 나누었습니다. 새 글은 저절로 나타납니다.` : "오늘은 아직 나눈 글이 없습니다. 첫 법문을 나누어 보세요."));
-  const count = {}; items.forEach(x => { if (x.pid) count[x.pid] = (count[x.pid] || 0) + 1; });
+  const count = Object.create(null); items.forEach(x => { if (typeof x.pid === "string" && x.pid) count[x.pid] = (count[x.pid] || 0) + 1; });
   const mine = S.user["j-" + dayKey()];
   if (!store.canShare) out.push(h("p", {class:"note"}, "지금은 함께 읽기에 글을 나눌 수 없습니다. 내가 고른 법문은 이 폰에만 남습니다."));
   else if (!mine) out.push(h("div", null, h("a", {class:"btn primary", href:"#today"}, "오늘의 법문 고르러 가기")));
@@ -548,7 +576,17 @@ function viewTogether(){
 }
 
 /* ───── 원문 펼쳐 적기 (새 화면) ───── */
-let sheetEl = null, sheetReturn = null;
+let sheetEl = null, sheetReturn = null, draftTimer = null;
+function loadDrafts(){ try{ const d = JSON.parse(localStorage.getItem("beopmun.drafts") || "{}"); return d && typeof d === "object" ? d : {}; }catch(e){ return {}; } }
+function keepDrafts(){
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => { try{
+    const keep = {}; Object.keys(S.drafts).forEach(k => { const d = S.drafts[k]; if (d && (d.reason || d.note)) keep[k] = d; });
+    localStorage.setItem("beopmun.drafts", JSON.stringify(keep));
+  }catch(e){} }, 400);
+}
+function dropDraft(k){ delete S.drafts[k]; keepDrafts(); }
+addEventListener("popstate", () => { if (S.sheet) closeSheet(true); });
 function contextOf(p){
   if (!p || p.book !== "정전") return [];
   const top = (p.sub || "").split(" · ")[0];
@@ -561,13 +599,17 @@ function openSheet(o){
   if (!p) return;
   const dk = o.edit ? "edit:" + o.date : o.pid;
   if (!S.drafts[dk]) S.drafts[dk] = o.edit && e ? {reason:e.reason || "", note:e.note || "", share:!!e.shared} : {reason:"", note:"", share:sharePref()};
+  const wasOpen = !!S.sheet;
   S.sheet = {...o, dk};
-  sheetReturn = document.activeElement;
+  if (!wasOpen) sheetReturn = document.activeElement;
+  if (!wasOpen && !(history.state && history.state.sheet)){ try{ history.pushState({sheet:true}, ""); }catch(e){} }
   renderSheet();
 }
-function closeSheet(){
+function closeSheet(fromPop){
+  const was = !!S.sheet;
   S.sheet = null;
   if (sheetEl){ sheetEl.remove(); sheetEl = null; }
+  if (was && fromPop !== true && history.state && history.state.sheet){ try{ history.back(); }catch(e){} }
   document.body.classList.remove("sheet-open");
   if (sheetReturn && document.contains(sheetReturn)) sheetReturn.focus({preventScroll:true});
 }
@@ -580,22 +622,32 @@ function renderSheet(){
   const ctx = contextOf(p);
   const isToday = o.date === dayKey();
   const save = () => act(async () => {
-    const share = isToday && dr.share && store.canShare;
+    const key = "j-" + o.date, want = isToday && dr.share && store.canShare;
+    const was = !!(e && e.shared);
     const entry = o.edit && e
-      ? {...e, reason:dr.reason.trim(), note:dr.note.trim(), shared:share, updatedAt:Date.now()}
-      : {date:o.date, pid:p.id, text:p.text, source:src, reason:dr.reason.trim(), note:dr.note.trim(), shared:share, at:Date.now()};
-    await store.putUser("j-" + o.date, entry);
+      ? {...e, reason:dr.reason.trim(), note:dr.note.trim(), shared:was, updatedAt:Date.now()}
+      : {date:o.date, pid:p.id, text:p.text, source:src, reason:dr.reason.trim(), note:dr.note.trim(), shared:false, at:Date.now()};
+    await store.putUser(key, entry);
+    S.user[key] = entry; dropDraft(o.dk); S.sel = null;
     if (isToday && !o.edit) setSharePref(dr.share);
-    if (share) await store.putFeed(feedDoc(entry));
-    else if (e && e.shared) await store.delFeed();
-    S.user["j-" + o.date] = entry; delete S.drafts[o.dk]; S.sel = null;
     closeSheet();
+    let warn = "";
+    if (want){
+      try{ await store.putFeed(feedDoc(entry)); entry.shared = true; }
+      catch(err){ warn = was ? "고친 글은 이 폰에 간직했지만 함께 읽기에는 아직 반영하지 못했습니다. 인터넷이 될 때 다시 고쳐 적어 주세요."
+        : "법문은 이 폰에 간직했지만 함께 읽기에는 올리지 못했습니다. 인터넷이 될 때 오늘 카드에서 '함께 읽기에 나누기'를 눌러 주세요."; }
+    } else if (was){
+      try{ await store.delFeed(); entry.shared = false; }
+      catch(err){ warn = "함께 읽기에서 내리지 못했습니다. 인터넷이 될 때 '나누기 그만두기'를 눌러 주세요."; }
+    }
+    if (entry.shared !== was || (!o.edit && entry.shared)){ try{ await store.putUser(key, entry); }catch(err){} }
+    if (warn) S.warn = warn;
   });
   const box = h("div", {class:"sheet", role:"dialog", "aria-modal":"true", "aria-labelledby":"sheet-title",
       onkeydown: ev => { if (ev.key === "Escape") closeSheet(); }},
     h("div", {class:"sheet-in"},
       h("div", {class:"sheet-top"},
-        h("button", {class:"btn small", type:"button", onclick: closeSheet}, "← 돌아가기"),
+        h("button", {class:"btn small", type:"button", onclick: () => closeSheet()}, "← 돌아가기"),
         h("span", {class:"date"}, dayText(o.date))),
       h("div", {class:"sheet-msg"}),
       h("h2", {id:"sheet-title"}, o.edit ? "그날의 법문 다시 읽기" : "오늘의 법문 원문"),
@@ -607,17 +659,17 @@ function renderSheet(){
           h("div", {class:"ctx"}, ctx.map(x => h("div", {class:"scripture" + (x.id === p.id ? " here" : "")}, x.text)))) : null),
       h("div", {class:"stack"},
         h("label", {for:"s-reason", class:"label-strong"}, "왜 이 법문이 와닿았나요?"),
-        h("textarea", {id:"s-reason", placeholder:"오늘의 마음을 한두 줄로 적어 주세요.", value:dr.reason, oninput: ev => dr.reason = ev.target.value})),
+        h("textarea", {id:"s-reason", placeholder:"오늘의 마음을 한두 줄로 적어 주세요.", value:dr.reason, oninput: ev => { dr.reason = ev.target.value; keepDrafts(); }})),
       h("div", {class:"stack"},
         h("label", {for:"s-note", class:"label-strong"}, "나의 감상 · 나만의 해석"),
-        h("textarea", {id:"s-note", class:"long", placeholder:"이 법문을 읽고 떠오른 생각, 내 삶에 비추어 본 뜻을 자유롭게 적어 보세요.", value:dr.note, oninput: ev => dr.note = ev.target.value})),
+        h("textarea", {id:"s-note", class:"long", placeholder:"이 법문을 읽고 떠오른 생각, 내 삶에 비추어 본 뜻을 자유롭게 적어 보세요.", value:dr.note, oninput: ev => { dr.note = ev.target.value; keepDrafts(); }})),
       isToday && store.canShare ? h("label", {class:"check", for:"s-share"},
         h("input", {id:"s-share", type:"checkbox", checked:dr.share ? "checked" : null, onchange: ev => dr.share = ev.target.checked}),
         h("span", null, "이름 없이 '함께 읽기'에 나누기", h("br"), h("span", {class:"note"}, "법문과 적은 글이 오늘 이 앱을 쓰는 다른 사람에게 이름 없이 보입니다."))) : null,
       isToday && !store.canShare ? h("p", {class:"note"}, "지금은 '함께 읽기'에 연결되어 있지 않습니다. 적은 글은 이 폰에만 남습니다.") : null,
       h("div", {class:"row"},
         h("button", {class:"btn primary", type:"button", disabled:S.busy, onclick: save}, o.edit ? "고친 대로 간직하기" : "오늘의 법문으로 간직하기"),
-        h("button", {class:"btn", type:"button", onclick: closeSheet}, o.edit ? "그만두기" : "다른 구절 고르기")),
+        h("button", {class:"btn", type:"button", onclick: () => closeSheet()}, o.edit ? "그만두기" : "다른 구절 고르기")),
       h("p", {class:"note"}, o.edit ? "" : "돌아가도 적던 글은 남아 있어 다시 누르면 이어 쓸 수 있습니다.")));
   if (sheetEl) sheetEl.replaceWith(box); else document.body.classList.add("sheet-open");
   sheetEl = box;
@@ -636,7 +688,7 @@ function render(){
   const kids = VIEWS[v]();
   main.replaceChildren(...(Array.isArray(kids) ? kids : [kids]).filter(Boolean));
 }
-addEventListener("hashchange", async () => { closeSheet(); S.confirmFeed = null; S.editing = null; S.confirmDel = null; say(""); if (currentView() === "today") await ensureDraw(); render(); });
+addEventListener("hashchange", async () => { if (S.sheet) closeSheet(true); S.confirmFeed = null; S.editing = null; S.confirmDel = null; say(""); if (currentView() === "today") await ensureDraw(); render(); });
 document.getElementById("date").textContent = dayText(dayKey());
 render();
 (async function start(){
@@ -645,8 +697,10 @@ render();
     S.passages = (window.JEONGJEON || []).map(p => ({book:"정전", ...p}))
       .concat((window.DAEJONGGYEONG || []).map(p => ({book:"대종경", sub:"", ...p})));
     S.user = await store.loadUser();
+    S.drafts = loadDrafts();
   }catch(e){ say("기록을 읽지 못했습니다. 앱을 다시 열어 주세요.", true); }
   S.ready = true;
+  shownDay = dayKey();
   S.feed.state = "loading";
   store.init().then(() => { startFeed(); render(); });
   await ensureDraw();

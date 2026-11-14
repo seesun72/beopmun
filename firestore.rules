@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 함께 읽기: 누구나 읽고, 각자는 자기 글 하나만 쓰고 지울 수 있습니다.
+    match /feed/{uid} {
+      allow read: if true;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['date','pid','text','source','reason','note','at','updatedAt'])
+        && request.resource.data.date is string && request.resource.data.date.size() == 10
+        && request.resource.data.text is string && request.resource.data.text.size() <= 4000
+        && request.resource.data.source is string && request.resource.data.source.size() <= 200
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 2000
+        && request.resource.data.note is string && request.resource.data.note.size() <= 6000;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

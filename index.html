@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c4d">
+<meta name="description" content="정전·대종경 원문으로 오늘 마음에 와닿는 법문을 고르고 감상을 적는 앱">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="내 마음의 법문">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>내 마음의 법문</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* 배치: 한 줄기 세로 흐름(최대 680px). 금빛 일원상이 머리와 선택 표시에만 쓰이고 나머지는 조용하다. */
+:root{
+  --bg:#eceee9; --surface:#f8f9f6; --ink:#1b2a2a; --muted:#5a6966; --line:#cdd4cd;
+  --accent:#1f5c4d; --accent-ink:#ffffff; --ring:#a47c2a;
+  --good:#2b7748; --bad:#ad4035;
+  --f-scripture:"Gowun Batang","Noto Serif KR","Apple SD Gothic Neo",serif;
+  --f-ui:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#111816; --surface:#19231f; --ink:#e5ebe6; --muted:#93a39d; --line:#2b3934;
+    --accent:#7cc4ae; --accent-ink:#0d1513; --ring:#cfa857; --good:#7fcf9c; --bad:#ee8f85;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111816; --surface:#19231f; --ink:#e5ebe6; --muted:#93a39d; --line:#2b3934;
+  --accent:#7cc4ae; --accent-ink:#0d1513; --ring:#cfa857; --good:#7fcf9c; --bad:#ee8f85;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:16px;line-height:1.65;-webkit-text-size-adjust:100%}
+.wrap{max-width:680px;margin:0 auto;padding:calc(28px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(72px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));display:flex;flex-direction:column;gap:24px}
+header.top{display:flex;align-items:center;gap:16px}
+.ilwon{width:56px;height:56px;flex:none}
+.ilwon circle{fill:none;stroke:var(--ring);stroke-width:3.2;stroke-linecap:round;stroke-dasharray:152;animation:draw 1.4s ease-out}
+@keyframes draw{from{stroke-dashoffset:152}}
+@media (prefers-reduced-motion:reduce){.ilwon circle{animation:none}*{transition:none!important}}
+h1{font-family:var(--f-scripture);font-weight:700;font-size:1.7rem;line-height:1.25;margin:0;text-wrap:balance}
+.date{color:var(--muted);font-size:.9rem;font-variant-numeric:tabular-nums}
+nav{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto}
+nav{scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav a{padding:10px 12px;color:var(--muted);text-decoration:none;font-weight:500;font-size:.95rem;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px}
+nav a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--ring)}
+main{display:flex;flex-direction:column;gap:20px}
+h2{font-family:var(--f-scripture);font-size:1.25rem;margin:0;text-wrap:balance;word-break:keep-all}
+h1{word-break:keep-all}
+p{margin:0}
+.lead{color:var(--muted)}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.spread{justify-content:space-between}
+.scripture{font-family:var(--f-scripture);font-size:1.12rem;line-height:1.95;white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere}
+.source{color:var(--muted);font-size:.85rem}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+button.choice{font:inherit;color:inherit;text-align:left;cursor:pointer;display:grid;grid-template-columns:28px 1fr;gap:14px;align-items:start;width:100%}
+button.choice:hover{border-color:var(--ring)}
+.mark{width:24px;height:24px;border-radius:50%;border:2px solid var(--line);margin-top:8px}
+button.choice[aria-pressed="true"]{border-color:var(--ring)}
+button.choice[aria-pressed="true"] .mark{border-color:var(--ring);box-shadow:inset 0 0 0 4px var(--surface);background:var(--ring)}
+.btn{font:inherit;font-weight:500;cursor:pointer;border-radius:6px;padding:9px 16px;border:1px solid var(--line);background:transparent;color:var(--ink)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:5px 10px;font-size:.85rem}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+label{font-size:.85rem;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+textarea,select,input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px 11px;width:100%}
+textarea{min-height:96px;resize:vertical;line-height:1.7}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.note{font-size:.88rem;color:var(--muted)}
+.banner{border-left:3px solid var(--ring);padding:8px 12px;background:var(--surface);font-size:.9rem}
+.banner.err{border-left-color:var(--bad)}
+.entry .when{font-variant-numeric:tabular-nums;font-size:.85rem;color:var(--muted)}
+.reason{border-left:2px solid var(--ring);padding-left:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.month{font-size:.85rem;color:var(--muted);letter-spacing:.04em;margin-top:8px}
+.opt{font:inherit;color:inherit;text-align:left;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:13px 16px;width:100%}
+.opt:hover:not(:disabled){border-color:var(--ring)}
+.opt.right{border-color:var(--good);color:var(--good);font-weight:600}
+.opt.wrong{border-color:var(--bad);color:var(--bad)}
+.opt{display:grid;grid-template-columns:2.2em 1fr auto;align-items:baseline;gap:6px}
+.opt .num{font-variant-numeric:tabular-nums;font-weight:600;color:var(--muted)}
+.opt.right .num,.opt.wrong .num{color:inherit}
+.opt .tag{font-size:.8rem;font-weight:600}
+.src-grid{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}
+.src-grid dt{color:var(--muted);font-size:.85rem}
+.src-grid dd{margin:0;font-family:var(--f-scripture);font-size:1.05rem}
+.verdict{font-weight:600}
+.verdict.ok{color:var(--good)} .verdict.no{color:var(--bad)}
+.tally{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.9rem}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85em;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+.sheet{position:fixed;inset:0;z-index:20;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sheet-in{max-width:680px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 20px calc(64px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:20px}
+.sheet-top{z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line)}
+.sheet .original{font-family:var(--f-scripture);font-size:1.28rem;line-height:2.05;white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;border-left:3px solid var(--ring);padding:4px 0 4px 18px}
+.ctx{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.ctx .scripture{font-size:1rem;color:var(--muted)}
+.ctx .here{color:var(--ink);border-left:2px solid var(--ring);padding-left:10px}
+.label-strong{font-size:.95rem;color:var(--ink);font-weight:600}
+textarea.long{min-height:220px}
+.entry h3{font-size:.85rem;color:var(--muted);font-weight:500;margin:4px 0 0}
+body.sheet-open{overflow:hidden}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:.85rem;color:var(--muted)}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--good);display:inline-block}
+.live.off i{background:var(--line)}
+@media (prefers-reduced-motion:no-preference){.live:not(.off) i{animation:pulse 2s ease-in-out infinite}}
+@keyframes pulse{50%{opacity:.35}}
+.pill{font-size:.78rem;border:1px solid var(--line);border-radius:999px;padding:1px 9px;color:var(--muted);white-space:nowrap}
+.pill.mine{border-color:var(--ring);color:var(--ink)}
+.check{display:flex;flex-direction:row;align-items:flex-start;gap:10px;font-size:.92rem;color:var(--ink)}
+.check input{width:auto;margin-top:5px}
+nav .sm{display:none}
+@media (max-width:600px){
+  nav{position:fixed;left:0;right:0;bottom:0;z-index:10;display:grid;grid-template-columns:repeat(5,1fr);gap:0;background:var(--surface);border-top:1px solid var(--line);border-bottom:0;padding-bottom:env(safe-area-inset-bottom);overflow:visible}
+  nav a{text-align:center;padding:12px 2px 10px;font-size:.82rem;border-bottom:0;border-top:2px solid transparent;margin:0}
+  nav a[aria-current="page"]{border-top-color:var(--ring);border-bottom:0}
+  nav .lg{display:none} nav .sm{display:inline}
+  .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <svg class="ilwon" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="24" transform="rotate(-90 28 28)"/></svg>
+    <div>
+      <h1>내 마음의 법문</h1>
+      <div class="date" id="date"></div>
+    </div>
+  </header>
+  <nav aria-label="꼭지">
+    <a href="#today" data-v="today"><span class="lg">오늘의 법문</span><span class="sm" aria-hidden="true">오늘</span></a>
+    <a href="#together" data-v="together"><span class="lg">함께 읽기</span><span class="sm" aria-hidden="true">함께</span></a>
+    <a href="#journal" data-v="journal"><span class="lg">마음 돌아보기</span><span class="sm" aria-hidden="true">돌아보기</span></a>
+    <a href="#quiz" data-v="quiz"><span class="lg">법문 알아맞추기</span><span class="sm" aria-hidden="true">맞추기</span></a>
+    <a href="#library" data-v="library"><span class="lg">경전 보기</span><span class="sm" aria-hidden="true">경전</span></a>
+  </nav>
+  <div id="notice"></div>
+  <main id="main"><p class="lead">법문을 불러오고 있습니다.</p></main>
+</div>
+<script src="jeongjeon.js"></script>
+<script src="daejonggyeong.js"></script>
+<script src="config.js"></script>
+<script>
+"use strict";
+/* ───── 경전 차례 (출처 선택과 문제의 보기에 쓴다) ───── */
+const CANON = {
+  "정전": [
+    {part:"총서편", chaps:["개교의 동기","교법의 총설"]},
+    {part:"교의편", chaps:["일원상","사은","사요","삼학","팔조","인생의 요도와 공부의 요도","사대강령"]},
+    {part:"수행편", chaps:["일상수행의 요법","정기 훈련과 상시 훈련","염불법","좌선법","의두 요목","일기법","무시선법","참회문","심고와 기도","불공하는 법","계문","솔성요론","최초법어","고락에 대한 법문","병든 사회와 그 치료법","영육 쌍전 법","법위등급"]}
+  ],
+  "대종경": [
+    {part:"서품",n:19},{part:"교의품",n:39},{part:"수행품",n:63},{part:"인도품",n:59},{part:"인과품",n:33},
+    {part:"변의품",n:40},{part:"성리품",n:31},{part:"불지품",n:23},{part:"천도품",n:38},{part:"신성품",n:19},
+    {part:"요훈품",n:45},{part:"실시품",n:47},{part:"교단품",n:42},{part:"전망품",n:30},{part:"부촉품",n:19}
+  ]
+};
+const MAX_REROLL = 3;
+const partOf = (book, part) => CANON[book] && CANON[book].find(x => x.part === part);
+function sourceLabel(p){
+  if (p.book === "정전"){
+    const name = (partOf("정전", p.part) || {chaps:[]}).chaps[p.chap - 1] || "";
+    return `정전 ${p.part} 제${p.chap}장 ${name}` + (p.sub ? ` · ${p.sub}` : "");
+  }
+  return `대종경 ${p.part} ${p.chap}장`;
+}
+const quizKey = p => p.book === "정전" ? `정전|${p.part}|${p.chap}` : `대종경|${p.part}`;
+const SECTIONS = [];
+CANON["정전"].forEach(x => x.chaps.forEach((c, i) => SECTIONS.push({key:`정전|${x.part}|${i+1}`, book:"정전", label:`정전 ${x.part} · ${c}`})));
+CANON["대종경"].forEach(x => SECTIONS.push({key:`대종경|${x.part}`, book:"대종경", label:`대종경 ${x.part}`}));
+
+/* ───── 작은 도우미 ───── */
+function h(tag, attrs, ...kids){
+  const el = document.createElement(tag);
+  for (const k in (attrs || {})){
+    const v = attrs[k];
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "value") el.value = v;
+    else if (k === "disabled" || k === "selected") el[k] = !!v;
+    else el.setAttribute(k, v);
+  }
+  kids.flat().forEach(c => { if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c))); });
+  return el;
+}
+const pad = n => String(n).padStart(2, "0");
+function dayKey(d = new Date()){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function dayText(key){
+  const [y, m, d] = key.split("-").map(Number);
+  const w = "일월화수목금토"[new Date(y, m-1, d).getDay()];
+  return `${y}년 ${m}월 ${d}일 ${w}요일`;
+}
+function shuffle(a){ a = a.slice(); for (let i = a.length-1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; } return a; }
+function withTimeout(p, ms = 10000){
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({code:"timeout"}), ms))]);
+}
+
+/* ───── 저장소: 연결되면 계정에 저장, 아니면 이 브라우저에만 ───── */
+const store = {
+  db:null, uid:null, isOwner:false, canShare:false, personal:"local", mem:{user:{}},
+  readLocal(){ try{ const t = localStorage.getItem("beopmun.v1"); if (t) this.mem = Object.assign({user:{}}, JSON.parse(t)); }catch(e){} },
+  writeLocal(){ try{ localStorage.setItem("beopmun.v1", JSON.stringify(this.mem)); return true; }catch(e){ return false; } },
+  loadScript(src){ return new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = no; document.head.append(el); }); },
+  async init(){
+    this.readLocal();
+    const cfg = window.BEOPMUN_FIREBASE;
+    if (!cfg || !cfg.apiKey || !cfg.projectId) return;
+    try{
+      const v = "10.14.1", base = `https://www.gstatic.com/firebasejs/${v}/`;
+      await this.loadScript(base + "firebase-app-compat.js");
+      await Promise.all([this.loadScript(base + "firebase-auth-compat.js"), this.loadScript(base + "firebase-firestore-compat.js")]);
+      const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+      const cred = await withTimeout(firebase.auth(app).signInAnonymously(), 15000);
+      this.uid = cred.user.uid;
+      this.db = firebase.firestore(app);
+      this.canShare = true;
+    }catch(e){ this.db = null; this.canShare = false; }
+  },
+  async loadUser(){ return {...this.mem.user}; },
+  async putUser(k, data){ this.mem.user[k] = data; if (!this.writeLocal()) throw {code:"quota_exceeded"}; },
+  async delUser(k){ delete this.mem.user[k]; this.writeLocal(); },
+  async putFeed(entry){
+    if (!this.canShare) return;
+    await withTimeout(this.db.collection("feed").doc(this.uid).set(entry));
+  },
+  async delFeed(id){
+    if (!this.db) return;
+    await withTimeout(this.db.collection("feed").doc(id || this.uid).delete());
+  },
+  watchFeed(date, next, error){
+    if (!this.db) return null;
+    return this.db.collection("feed").where("date", "==", date).limit(500).onSnapshot({includeMetadataChanges:true}, next, error);
+  }
+};
+
+/* ───── 상태 ───── */
+const S = { ready:false, passages:[], user:{}, sel:null, sheet:null, drafts:{}, editing:null, editText:"", confirmDel:null,
+  quiz:null, session:{right:0,total:0,streak:0}, lib:{book:"전체", part:"", q:"", shown:30}, busy:false,
+  feed:{date:null, items:[], state:"loading", unsub:null, timer:null}, confirmFeed:null };
+function sharePref(){ try{ return localStorage.getItem("beopmun.share") !== "0"; }catch(e){ return true; } }
+function setSharePref(v){ try{ localStorage.setItem("beopmun.share", v ? "1" : "0"); }catch(e){} }
+const byId = id => S.passages.find(p => p.id === id);
+const pool = () => { const a = S.passages.filter(p => p.text.length >= 15 && p.text.length <= 400); return a.length >= 3 ? a : S.passages; };
+const main = document.getElementById("main");
+const notice = document.getElementById("notice");
+function say(msg, err){
+  const b = () => msg ? h("div", {class:"banner" + (err ? " err" : ""), role:"status"}, msg) : "";
+  notice.replaceChildren(b());
+  if (sheetEl){ const slot = sheetEl.querySelector(".sheet-msg"); if (slot) slot.replaceChildren(b()); }
+}
+function fail(e){
+  const c = e && e.code;
+  say(c === "quota_exceeded" ? "이 폰의 저장 공간에 더 적을 수 없습니다. 마음 돌아보기에서 기록을 내보낸 뒤 오래된 기록을 지워 주세요."
+    : c === "invalid_argument" ? "글이 너무 길거나 형식이 맞지 않아 나누지 못했습니다. 조금 줄여서 다시 해 주세요."
+    : "서버에 닿지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.", true);
+}
+async function act(fn){
+  if (S.busy) return; S.busy = true; say("");
+  try{ await fn(); }catch(e){ fail(e); }
+  S.busy = false; render();
+}
+
+/* ───── 오늘의 법문 ───── */
+function drawThree(draw){
+  const shown = new Set(draw ? draw.shown : []);
+  const cur = new Set(draw ? draw.current : []);
+  const all = pool();
+  let cand = all.filter(p => !shown.has(p.id));
+  if (cand.length < 3) cand = all.filter(p => !cur.has(p.id));
+  if (cand.length < 3) cand = all;
+  return shuffle(cand).slice(0, 3).map(p => p.id);
+}
+function todayDraw(){
+  const d = S.user.draw;
+  return d && d.date === dayKey() && d.current.every(byId) ? d : null;
+}
+async function ensureDraw(){
+  if (todayDraw() || S.passages.length < 3) return;
+  const current = drawThree(null);
+  const d = {date:dayKey(), current, shown:current.slice(), rerolls:0};
+  S.user.draw = d;
+  try{ await store.putUser("draw", d); }catch(e){ fail(e); }
+}
+function viewToday(){
+  const key = dayKey(), saved = S.user["j-" + key];
+  if (saved){
+    return [
+      h("h2", null, "오늘 간직한 법문"),
+      entryCard(key, saved, true),
+      h("p", {class:"note"}, "내일 새 법문 세 구절이 준비됩니다.")
+    ];
+  }
+  if (S.passages.length < 3) return emptyLibrary("경전 자료를 읽지 못했습니다. 화면을 다시 열어 주세요.");
+  const d = todayDraw();
+  if (!d) return h("p", {class:"lead"}, "오늘의 법문을 고르고 있습니다.");
+  const left = MAX_REROLL - d.rerolls;
+  const out = [
+    h("h2", null, "오늘 하루 내 마음에 와닿는 법문은 무엇인가요?"),
+    h("p", {class:"lead"}, "마음에 와닿는 구절을 누르면 원문을 다시 펼쳐 놓고 감상과 해석을 적을 수 있습니다."),
+    h("div", {class:"stack"}, d.current.map(id => {
+      const p = byId(id);
+      return h("button", {class:"card choice", type:"button", "aria-pressed": String(S.sel === id),
+        onclick: () => { S.sel = id; render(); openSheet({pid:id, date:key}); }},
+        h("span", {class:"mark"}),
+        h("span", {class:"stack"}, h("span", {class:"scripture"}, p.text), h("span", {class:"source"}, sourceLabel(p))));
+    }))
+  ];
+  out.push(h("div", {class:"row spread"},
+    h("button", {class:"btn", type:"button", disabled: left <= 0 || S.busy, onclick: () => act(async () => {
+      const current = drawThree(d);
+      const nd = {date:key, current, shown:[...new Set([...d.shown, ...current])], rerolls:d.rerolls + 1};
+      await store.putUser("draw", nd); S.user.draw = nd; S.sel = null;
+    })}, "다른 세 구절 보기"),
+    h("span", {class:"tally"}, left > 0 ? `다시 요청 ${left}번 남음 (하루 ${MAX_REROLL}번)` : "오늘의 다시 요청을 모두 썼습니다. 이 가운데서 골라 보세요.")));
+  return out;
+}
+
+/* ───── 마음 돌아보기 ───── */
+function entryCard(key, e, isToday){
+  const kids = [
+    h("div", {class:"row spread"}, h("div", {class:"when"}, dayText(key)),
+      isToday && e.shared ? h("a", {class:"pill mine", href:"#together"}, "이름 없이 나누는 중") : null),
+    h("div", {class:"scripture"}, e.text),
+    h("div", {class:"source"}, e.source)
+  ];
+  {
+    if (e.reason) kids.push(h("h3", null, "와닿은 이유"), h("div", {class:"reason"}, e.reason));
+    if (e.note) kids.push(h("h3", null, "나의 감상 · 나만의 해석"), h("div", {class:"reason"}, e.note));
+    if (!e.reason && !e.note) kids.push(h("div", {class:"note"}, "적어 둔 마음이 없습니다."));
+    const tools = [h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; openSheet({pid:e.pid, date:key, edit:true}); }}, "원문 펼쳐 고쳐 적기")];
+    if (isToday && store.canShare) tools.push(h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(async () => {
+      const ne = {...e, shared:!e.shared, updatedAt:Date.now()};
+      await store.putUser("j-" + key, ne);
+      if (ne.shared) await store.putFeed(feedDoc(ne)); else await store.delFeed();
+      S.user["j-" + key] = ne; setSharePref(ne.shared);
+    })}, e.shared ? "나누기 그만두기" : "함께 읽기에 나누기"));
+    if (S.confirmDel === key){
+      tools.push(h("span", {class:"note"}, isToday ? "지우면 오늘 법문을 다시 고를 수 있습니다." : "이 날의 기록을 지울까요?"),
+        h("button", {class:"btn small danger", type:"button", disabled:S.busy, onclick: () => act(async () => {
+          await store.delUser("j-" + key); if (e.shared) await store.delFeed(); delete S.user["j-" + key]; S.confirmDel = null;
+        })}, "지우기"),
+        h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; render(); }}, "두기"));
+    } else {
+      tools.push(h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = key; render(); }}, isToday ? "다시 고르기" : "지우기"));
+    }
+    kids.push(h("div", {class:"row"}, tools));
+  }
+  return h("article", {class:"card entry"}, kids);
+}
+function backupCard(){
+  return h("details", {class:"card"},
+    h("summary", null, "기록 내보내기 · 불러오기"),
+    h("p", {class:"note"}, "기록은 이 폰에만 저장됩니다. 폰을 바꾸거나 앱을 지우기 전에 내보내 두었다가 새 폰에서 불러오세요."),
+    h("div", {class:"row"},
+      h("button", {class:"btn small", type:"button", onclick: () => {
+        const blob = new Blob([JSON.stringify({app:"beopmun", v:1, exported:new Date().toISOString(), user:S.user}, null, 1)], {type:"application/json"});
+        const a = h("a", {href:URL.createObjectURL(blob), download:`내마음의법문-${dayKey()}.json`}); document.body.append(a); a.click(); a.remove();
+      }}, "내보내기"),
+      h("label", {class:"btn small", for:"f-import", style:"display:inline-block"}, "불러오기"),
+      h("input", {id:"f-import", type:"file", accept:".json,application/json", style:"display:none", onchange: ev => {
+        const f = ev.target.files && ev.target.files[0]; if (!f) return;
+        f.text().then(t => { const d = JSON.parse(t); if (!d || d.app !== "beopmun" || typeof d.user !== "object") throw 0;
+          let n = 0; Object.keys(d.user).forEach(k => { if (/^j-\d{4}-\d{2}-\d{2}$/.test(k) && !S.user[k]){ S.user[k] = d.user[k]; store.mem.user[k] = d.user[k]; n++; } });
+          store.writeLocal(); say(`기록 ${n}일을 불러왔습니다. 같은 날짜에 이미 있는 기록은 그대로 두었습니다.`); render(); })
+        .catch(() => say("이 파일은 내 마음의 법문 기록이 아닙니다.", true));
+      }})));
+}
+function viewJournal(){
+  const keys = Object.keys(S.user).filter(k => k.startsWith("j-")).map(k => k.slice(2)).sort().reverse();
+  if (!keys.length) return [h("h2", null, "마음 돌아보기"),
+    h("p", {class:"lead"}, "아직 간직한 법문이 없습니다. 오늘의 법문에서 한 구절을 골라 보세요."),
+    h("div", null, h("a", {class:"btn", href:"#today"}, "오늘의 법문으로"))];
+  const out = [h("div", {class:"row spread"}, h("h2", null, "마음 돌아보기"), h("span", {class:"tally"}, `간직한 법문 ${keys.length}일`)), backupCard()];
+  let month = "";
+  keys.forEach(k => {
+    const m = k.slice(0, 7);
+    if (m !== month){ month = m; out.push(h("div", {class:"month"}, `${+m.slice(0,4)}년 ${+m.slice(5)}월`)); }
+    out.push(entryCard(k, S.user["j-" + k], k === dayKey()));
+  });
+  return out;
+}
+
+/* ───── 법문 알아맞추기 ───── */
+function newQuestion(){
+  const prev = S.quiz && S.quiz.p.id;
+  let cand = pool().filter(p => p.id !== prev); if (!cand.length) cand = S.passages;
+  const p = cand[Math.floor(Math.random() * cand.length)];
+  const key = quizKey(p);
+  const others = shuffle(SECTIONS.filter(s => s.key !== key));
+  const same = others.find(s => s.book === p.book);
+  const second = others.find(s => s !== same);
+  S.quiz = {p, answer:key, chosen:null, options:shuffle([SECTIONS.find(s => s.key === key), same, second])};
+}
+function sourceParts(p){
+  if (p.book === "정전"){
+    const name = (partOf("정전", p.part) || {chaps:[]}).chaps[p.chap - 1] || "";
+    const rows = [["경전", "정전"], ["편", p.part], ["장", `제${p.chap}장 ${name}`]];
+    if (p.sub) rows.push(["절 · 조목", p.sub]);
+    return rows;
+  }
+  return [["경전", "대종경"], ["품", p.part], ["장", `${p.chap}장`]];
+}
+function chooseQuiz(o){
+  const q = S.quiz; if (!q || q.chosen != null) return;
+  const st = S.user.quiz || {right:0, total:0};
+  q.chosen = o.key; const ok = o.key === q.answer;
+  S.session.total++; if (ok){ S.session.right++; S.session.streak++; } else S.session.streak = 0;
+  const ns = {right:st.right + (ok ? 1 : 0), total:st.total + 1}; S.user.quiz = ns;
+  render(); store.putUser("quiz", ns).catch(() => {});
+  const r = document.getElementById("quiz-result"); if (r) r.focus({preventScroll:false});
+}
+function viewQuiz(){
+  if (!S.passages.length) return emptyLibrary("경전 자료를 읽지 못했습니다. 화면을 다시 열어 주세요.");
+  if (!S.quiz || !byId(S.quiz.p.id)) newQuestion();
+  const q = S.quiz, done = q.chosen != null, st = S.user.quiz || {right:0, total:0};
+  const numOf = key => q.options.findIndex(o => o.key === key) + 1;
+  const out = [
+    h("div", {class:"row spread"}, h("h2", null, "이 법문은 어디에 나올까요?"),
+      h("span", {class:"tally"}, `이번 ${S.session.right}/${S.session.total} · 이어 맞춘 ${S.session.streak} · 누적 ${st.right}/${st.total}`)),
+    h("div", {class:"card"}, h("div", {class:"scripture"}, q.p.text)),
+    h("div", {class:"stack", role:"group", "aria-label":"보기"}, q.options.map((o, i) => {
+      const isAns = done && o.key === q.answer, isMine = done && o.key === q.chosen;
+      return h("button", {type:"button", disabled:done,
+        class:"opt" + (isAns ? " right" : isMine ? " wrong" : ""), onclick: () => chooseQuiz(o)},
+        h("span", {class:"num"}, `${i + 1}.`), h("span", null, o.label),
+        h("span", {class:"tag"}, isAns ? "정답" : isMine ? "내 선택" : ""));
+    })),
+    done ? null : h("p", {class:"note"}, "번호를 누르거나 키보드 1 · 2 · 3으로 고를 수 있습니다.")
+  ];
+  if (done){
+    const ok = q.chosen === q.answer, mine = q.options.find(o => o.key === q.chosen), ans = q.options.find(o => o.key === q.answer);
+    out.push(h("div", {class:"card", role:"status", id:"quiz-result", tabindex:"-1"},
+      h("div", {class:"verdict " + (ok ? "ok" : "no")}, ok ? `맞았습니다. 정답은 ${numOf(q.answer)}번입니다.` : `아쉽습니다. 정답은 ${numOf(q.answer)}번입니다.`),
+      ok ? null : h("div", {class:"note"}, `고른 답: ${numOf(q.chosen)}. ${mine.label} / 정답: ${numOf(q.answer)}. ${ans.label}`),
+      h("strong", null, "정확한 출처"),
+      h("dl", {class:"src-grid"}, sourceParts(q.p).flatMap(([k, v]) => [h("dt", null, k), h("dd", null, v)])),
+      h("div", {class:"row"}, h("button", {class:"btn primary", type:"button", onclick: () => { newQuestion(); render(); }}, "다음 법문"))));
+  }
+  return out;
+}
+addEventListener("keydown", ev => {
+  if (currentView() !== "quiz" || S.sheet || !S.quiz || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test((ev.target && ev.target.tagName) || "")) return;
+  const n = ["1", "2", "3"].indexOf(ev.key);
+  if (n >= 0 && S.quiz.chosen == null){ ev.preventDefault(); chooseQuiz(S.quiz.options[n]); }
+  else if (ev.key === "Enter" && S.quiz.chosen != null && document.activeElement && document.activeElement.id === "quiz-result"){ newQuestion(); render(); }
+});
+
+/* ───── 경전 보기 ───── */
+function emptyLibrary(why){
+  return [h("h2", null, "법문을 불러오지 못했습니다"), h("p", {class:"lead"}, why)];
+}
+function viewLibrary(){
+  const L = S.lib, nJ = S.passages.filter(p => p.book === "정전").length, nD = S.passages.length - nJ;
+  const out = [h("div", {class:"row spread"}, h("h2", null, "경전 보기"), h("span", {class:"tally"}, `정전 ${nJ}구절 · 대종경 ${nD}장`)),
+  ];
+  const q = L.q.trim();
+  out.push(h("form", {class:"card", onsubmit: ev => { ev.preventDefault(); L.q = document.getElementById("f-q").value; L.shown = 30; render(); }},
+    h("div", {class:"row"}, ["전체", "정전", "대종경"].map(b =>
+      h("button", {class:"btn small" + (L.book === b ? " primary" : ""), type:"button", onclick: () => { L.book = b; L.part = ""; L.shown = 30; render(); }}, b))),
+    h("div", {class:"fields"},
+      L.book !== "전체" ? h("label", {for:"f-part"}, L.book === "정전" ? "편" : "품",
+        h("select", {id:"f-part", onchange: e => { L.part = e.target.value; L.shown = 30; render(); }},
+          h("option", {value:""}, "모두"), CANON[L.book].map(x => h("option", {value:x.part, selected:x.part === L.part}, x.part)))) : null,
+      h("label", {for:"f-q"}, "찾을 말", h("input", {id:"f-q", value:L.q, placeholder:"예: 감사 생활"}))),
+    h("div", {class:"row"}, h("button", {class:"btn", type:"submit"}, "찾기"))));
+  const list = S.passages.filter(p => (L.book === "전체" || p.book === L.book) && (!L.part || p.part === L.part)
+    && (!q || p.text.includes(q) || sourceLabel(p).includes(q)));
+  out.push(h("p", {class:"tally"}, `${list.length}건`));
+  list.slice(0, L.shown).forEach(p => out.push(h("article", {class:"card"},
+    h("div", {class:"scripture"}, p.text), h("div", {class:"source"}, sourceLabel(p)))));
+  if (list.length > L.shown) out.push(h("div", null,
+    h("button", {class:"btn", type:"button", onclick: () => { L.shown += 30; render(); }}, "더 보기")));
+  return out;
+}
+
+/* ───── 함께 읽기 (무기명, 실시간) ───── */
+const clip = (v, n) => typeof v === "string" ? v.slice(0, n) : "";
+function feedDoc(e){
+  return {date:e.date, pid:clip(e.pid, 80), text:clip(e.text, 4000), source:clip(e.source, 200),
+    reason:clip(e.reason, 2000), note:clip(e.note, 6000), at:e.at || Date.now(), updatedAt:Date.now()};
+}
+function startFeed(){
+  const F = S.feed, date = dayKey();
+  if (F.unsub){ try{ F.unsub(); }catch(e){} F.unsub = null; }
+  clearTimeout(F.timer);
+  F.date = date; F.items = []; F.state = "loading";
+  if (!store.db){ F.state = "off"; return; }
+  F.timer = setTimeout(() => { if (F.state === "loading"){ F.state = "slow"; if (currentView() === "together") render(); } }, 10000);
+  F.unsub = store.watchFeed(date, snap => {
+    F.items = snap.docs.map(d => ({id:d.id, ...d.data()}))
+      .filter(x => x.date === date && typeof x.text === "string")
+      .sort((a, b) => (b.updatedAt || b.at || 0) - (a.updatedAt || a.at || 0));
+    if (!snap.metadata.fromCache){ F.state = "live"; clearTimeout(F.timer); }
+    else if (F.state === "loading") F.state = "cached";
+    if (currentView() === "together" && !S.sheet) render();
+  }, err => { clearTimeout(F.timer); F.state = "error"; if (currentView() === "together") render(); });
+}
+setInterval(() => { if (S.ready && S.feed.date && S.feed.date !== dayKey()) { startFeed(); render(); } }, 60000);
+function timeText(ms){ const d = new Date(ms); return isNaN(d) ? "" : `${d.getHours() < 12 ? "오전" : "오후"} ${((d.getHours() + 11) % 12) + 1}:${pad(d.getMinutes())}`; }
+function viewTogether(){
+  const F = S.feed, items = F.items;
+  const live = F.state === "live" || F.state === "cached";
+  const out = [h("div", {class:"row spread"}, h("h2", null, "오늘 함께 고른 법문"),
+    h("span", {class:"live" + (live ? "" : " off")}, h("i"), live ? "실시간" : F.state === "loading" ? "불러오는 중" : "연결 안 됨"))];
+  if (F.state === "off") return out.concat(h("p", {class:"lead"}, navigator.onLine === false ? "인터넷에 연결되면 오늘 다른 사람들이 나눈 법문을 볼 수 있습니다." : "함께 읽기 서버가 아직 연결되지 않았습니다. 오늘의 법문과 마음 돌아보기는 그대로 쓸 수 있습니다."));
+  if (F.state === "error") return out.concat(h("p", {class:"lead"}, "나눈 글을 불러오지 못했습니다. 화면을 다시 열어 주세요."));
+  if (F.state === "slow" && !items.length) return out.concat(h("p", {class:"lead"}, "나눈 글에 아직 닿지 못했습니다. 연결이 되면 저절로 나타납니다."));
+  out.push(h("p", {class:"lead"}, items.length ? `오늘 ${items.length}명이 이름 없이 법문을 나누었습니다. 새 글은 저절로 나타납니다.` : "오늘은 아직 나눈 글이 없습니다. 첫 법문을 나누어 보세요."));
+  const count = {}; items.forEach(x => { if (x.pid) count[x.pid] = (count[x.pid] || 0) + 1; });
+  const mine = S.user["j-" + dayKey()];
+  if (!store.canShare) out.push(h("p", {class:"note"}, "지금은 함께 읽기에 글을 나눌 수 없습니다. 내가 고른 법문은 이 폰에만 남습니다."));
+  else if (!mine) out.push(h("div", null, h("a", {class:"btn primary", href:"#today"}, "오늘의 법문 고르러 가기")));
+  else if (!mine.shared) out.push(h("p", {class:"note"}, "내가 오늘 고른 법문은 아직 나누지 않았습니다. 오늘의 법문 화면에서 나눌 수 있습니다."));
+  items.forEach(x => {
+    const isMine = x.id === store.uid;
+    const tools = [];
+    if (false){
+      if (S.confirmFeed === x.id) tools.push(h("span", {class:"note"}, "이 글을 내릴까요?"),
+        h("button", {class:"btn small danger", type:"button", disabled:S.busy, onclick: () => act(async () => { await store.delFeed(x.id); S.confirmFeed = null; })}, "내리기"),
+        h("button", {class:"btn small", type:"button", onclick: () => { S.confirmFeed = null; render(); }}, "두기"));
+      else tools.push(h("button", {class:"btn small", type:"button", onclick: () => { S.confirmFeed = x.id; render(); }}, "글 내리기"));
+    }
+    out.push(h("article", {class:"card entry"},
+      h("div", {class:"row spread"}, h("span", {class:"when"}, timeText(x.updatedAt || x.at)),
+        h("span", {class:"row"}, count[x.pid] > 1 ? h("span", {class:"pill"}, `같은 법문 ${count[x.pid]}명`) : null, isMine ? h("span", {class:"pill mine"}, "내가 나눈 글") : null)),
+      h("div", {class:"scripture"}, clip(x.text, 4000)),
+      h("div", {class:"source"}, clip(x.source, 200)),
+      x.reason ? [h("h3", null, "와닿은 이유"), h("div", {class:"reason"}, clip(x.reason, 2000))] : null,
+      x.note ? [h("h3", null, "감상 · 해석"), h("div", {class:"reason"}, clip(x.note, 6000))] : null,
+      tools.length ? h("div", {class:"row"}, tools) : null));
+  });
+  return out;
+}
+
+/* ───── 원문 펼쳐 적기 (새 화면) ───── */
+let sheetEl = null, sheetReturn = null;
+function contextOf(p){
+  if (!p || p.book !== "정전") return [];
+  const top = (p.sub || "").split(" · ")[0];
+  const same = S.passages.filter(x => x.book === "정전" && x.part === p.part && x.chap === p.chap && (x.sub || "").split(" · ")[0] === top);
+  return same.length > 1 ? same : [];
+}
+function openSheet(o){
+  const e = S.user["j-" + o.date];
+  const p = byId(o.pid) || (e ? {id:o.pid, text:e.text, _source:e.source} : null);
+  if (!p) return;
+  const dk = o.edit ? "edit:" + o.date : o.pid;
+  if (!S.drafts[dk]) S.drafts[dk] = o.edit && e ? {reason:e.reason || "", note:e.note || "", share:!!e.shared} : {reason:"", note:"", share:sharePref()};
+  S.sheet = {...o, dk};
+  sheetReturn = document.activeElement;
+  renderSheet();
+}
+function closeSheet(){
+  S.sheet = null;
+  if (sheetEl){ sheetEl.remove(); sheetEl = null; }
+  document.body.classList.remove("sheet-open");
+  if (sheetReturn && document.contains(sheetReturn)) sheetReturn.focus({preventScroll:true});
+}
+function renderSheet(){
+  const o = S.sheet; if (!o) return;
+  const e = S.user["j-" + o.date];
+  const p = byId(o.pid) || {text:e ? e.text : "", _source:e ? e.source : ""};
+  const dr = S.drafts[o.dk];
+  const src = p._source || sourceLabel(p);
+  const ctx = contextOf(p);
+  const isToday = o.date === dayKey();
+  const save = () => act(async () => {
+    const share = isToday && dr.share && store.canShare;
+    const entry = o.edit && e
+      ? {...e, reason:dr.reason.trim(), note:dr.note.trim(), shared:share, updatedAt:Date.now()}
+      : {date:o.date, pid:p.id, text:p.text, source:src, reason:dr.reason.trim(), note:dr.note.trim(), shared:share, at:Date.now()};
+    await store.putUser("j-" + o.date, entry);
+    if (isToday && !o.edit) setSharePref(dr.share);
+    if (share) await store.putFeed(feedDoc(entry));
+    else if (e && e.shared) await store.delFeed();
+    S.user["j-" + o.date] = entry; delete S.drafts[o.dk]; S.sel = null;
+    closeSheet();
+  });
+  const box = h("div", {class:"sheet", role:"dialog", "aria-modal":"true", "aria-labelledby":"sheet-title",
+      onkeydown: ev => { if (ev.key === "Escape") closeSheet(); }},
+    h("div", {class:"sheet-in"},
+      h("div", {class:"sheet-top"},
+        h("button", {class:"btn small", type:"button", onclick: closeSheet}, "← 돌아가기"),
+        h("span", {class:"date"}, dayText(o.date))),
+      h("div", {class:"sheet-msg"}),
+      h("h2", {id:"sheet-title"}, o.edit ? "그날의 법문 다시 읽기" : "오늘의 법문 원문"),
+      h("div", {class:"stack"},
+        h("div", {class:"original"}, p.text),
+        h("div", {class:"source"}, src),
+        ctx.length ? h("details", null,
+          h("summary", {class:"note"}, "앞뒤 원문 이어 보기"),
+          h("div", {class:"ctx"}, ctx.map(x => h("div", {class:"scripture" + (x.id === p.id ? " here" : "")}, x.text)))) : null),
+      h("div", {class:"stack"},
+        h("label", {for:"s-reason", class:"label-strong"}, "왜 이 법문이 와닿았나요?"),
+        h("textarea", {id:"s-reason", placeholder:"오늘의 마음을 한두 줄로 적어 주세요.", value:dr.reason, oninput: ev => dr.reason = ev.target.value})),
+      h("div", {class:"stack"},
+        h("label", {for:"s-note", class:"label-strong"}, "나의 감상 · 나만의 해석"),
+        h("textarea", {id:"s-note", class:"long", placeholder:"이 법문을 읽고 떠오른 생각, 내 삶에 비추어 본 뜻을 자유롭게 적어 보세요.", value:dr.note, oninput: ev => dr.note = ev.target.value})),
+      isToday && store.canShare ? h("label", {class:"check", for:"s-share"},
+        h("input", {id:"s-share", type:"checkbox", checked:dr.share ? "checked" : null, onchange: ev => dr.share = ev.target.checked}),
+        h("span", null, "이름 없이 '함께 읽기'에 나누기", h("br"), h("span", {class:"note"}, "법문과 적은 글이 오늘 이 앱을 쓰는 다른 사람에게 이름 없이 보입니다."))) : null,
+      isToday && !store.canShare ? h("p", {class:"note"}, "지금은 '함께 읽기'에 연결되어 있지 않습니다. 적은 글은 이 폰에만 남습니다.") : null,
+      h("div", {class:"row"},
+        h("button", {class:"btn primary", type:"button", disabled:S.busy, onclick: save}, o.edit ? "고친 대로 간직하기" : "오늘의 법문으로 간직하기"),
+        h("button", {class:"btn", type:"button", onclick: closeSheet}, o.edit ? "그만두기" : "다른 구절 고르기")),
+      h("p", {class:"note"}, o.edit ? "" : "돌아가도 적던 글은 남아 있어 다시 누르면 이어 쓸 수 있습니다.")));
+  if (sheetEl) sheetEl.replaceWith(box); else document.body.classList.add("sheet-open");
+  sheetEl = box;
+  if (!document.body.contains(box)) document.body.append(box);
+  box.scrollTop = 0;
+  const t = box.querySelector("#s-reason"); if (t) t.focus({preventScroll:true});
+}
+
+/* ───── 그리기와 시작 ───── */
+const VIEWS = {today:viewToday, together:viewTogether, journal:viewJournal, quiz:viewQuiz, library:viewLibrary};
+function currentView(){ const v = location.hash.slice(1); return VIEWS[v] ? v : "today"; }
+function render(){
+  const v = currentView();
+  document.querySelectorAll("nav a").forEach(a => a.dataset.v === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
+  if (!S.ready) return;
+  const kids = VIEWS[v]();
+  main.replaceChildren(...(Array.isArray(kids) ? kids : [kids]).filter(Boolean));
+}
+addEventListener("hashchange", async () => { closeSheet(); S.confirmFeed = null; S.editing = null; S.confirmDel = null; say(""); if (currentView() === "today") await ensureDraw(); render(); });
+document.getElementById("date").textContent = dayText(dayKey());
+render();
+(async function start(){
+  store.readLocal();
+  try{
+    S.passages = (window.JEONGJEON || []).map(p => ({book:"정전", ...p}))
+      .concat((window.DAEJONGGYEONG || []).map(p => ({book:"대종경", sub:"", ...p})));
+    S.user = await store.loadUser();
+  }catch(e){ say("기록을 읽지 못했습니다. 앱을 다시 열어 주세요.", true); }
+  S.ready = true;
+  S.feed.state = "loading";
+  store.init().then(() => { startFeed(); render(); });
+  await ensureDraw();
+  render();
+})();
+</script>
+<script>
+if ("serviceWorker" in navigator && location.protocol === "https:") addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
+</body>
+</html>

@@ -890,20 +890,21 @@ async function drawCard(text, source){
   const g = c.getContext("2d"), F = '"Gowun Batang", "Noto Serif KR", "AppleMyungjo", serif';
   try{ await Promise.all([document.fonts.load('40px "Gowun Batang"', text + source), document.fonts.load('700 40px "Gowun Batang"', "내 마음의 법문")]); }catch(e){}
   g.fillStyle = "#f3f4ef"; g.fillRect(0, 0, W, H);
-  g.strokeStyle = "#a47c2a"; g.lineWidth = 7; g.beginPath(); g.arc(W / 2, 170, 62, 0, Math.PI * 2); g.stroke();
-  const top = 290, bottom = H - 230, maxW = W - 2 * P;
+  g.strokeStyle = "#f5c518"; g.lineWidth = 21; g.beginPath(); g.arc(W / 2, 175, 70, 0, Math.PI * 2); g.stroke();
+  const top = 320, bottom = H - 330, maxW = W - 2 * P;
   let lines = null, size = 0;
-  for (const s of [52, 46, 41, 36, 32, 28, 25]){
+  for (const s of [92, 82, 73, 65, 58, 52, 46, 41, 37, 33, 30, 27, 25]){
     g.font = `${s}px ${F}`; const L = wrapLines(g, text, maxW);
-    if (L.length * s * 1.8 <= bottom - top){ lines = L; size = s; break; }
+    if (L.length * s * 1.7 <= bottom - top){ lines = L; size = s; break; }
   }
   if (!lines) return null;
   g.fillStyle = "#1b2a2a"; g.textBaseline = "middle"; g.font = `${size}px ${F}`;
-  const lh = size * 1.8, y0 = top + ((bottom - top) - lines.length * lh) / 2 + lh / 2;
+  const lh = size * 1.7, y0 = top + ((bottom - top) - lines.length * lh) / 2 + lh / 2;
   lines.forEach((l, i) => g.fillText(l, P, y0 + i * lh));
-  g.fillStyle = "#5a6966"; g.font = `30px ${F}`; g.fillText(source, P, H - 170);
-  g.fillStyle = "#1f5c4d"; g.font = `700 30px ${F}`; g.fillText("내 마음의 법문", P, H - 112);
-  g.fillStyle = "#5a6966"; g.font = `26px ${F}`; g.textAlign = "right"; g.fillText(APP_URL.replace("https://", "").replace(/\/$/, ""), W - P, H - 112); g.textAlign = "left";
+  let ss = 60; g.font = `${ss}px ${F}`;
+  while (ss > 36 && g.measureText(source).width > maxW){ ss -= 2; g.font = `${ss}px ${F}`; }
+  g.fillStyle = "#5a6966"; g.fillText(source, P, H - 225);
+  g.fillStyle = "#1f5c4d"; g.font = `700 60px ${F}`; g.fillText("내 마음의 법문", P, H - 130);
   return c;
 }
 async function openCard(text, source){
@@ -913,7 +914,7 @@ async function openCard(text, source){
   const blob = await new Promise(r => c.toBlob(r, "image/png"));
   const url = URL.createObjectURL(blob), file = new File([blob], "법문카드.png", {type:"image/png"});
   const share = !!(navigator.canShare && navigator.canShare({files:[file]}));
-  const msg = "「내 마음의 법문」 " + source + "\n" + APP_URL;
+  const msg = "「내 마음의 법문」 " + source + "\n앱 바로가기 " + APP_URL;
   modal("법문 카드", [h("img", {src:url, class:"cardimg", alt:source + " 법문 카드"}),
     h("div", {class:"row"},
       share ? h("button", {class:"btn primary", type:"button", onclick: async () => { try{ await navigator.share({files:[file], text:msg}); }catch(e){} }}, "보내기") : null,

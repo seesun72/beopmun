@@ -386,21 +386,21 @@ function entryCard(key, e, isToday){
     if (!e.reason && !e.note) kids.push(h("div", {class:"note"}, "적어 둔 마음이 없습니다."));
     const tools = [h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; openSheet({pid:e.pid, date:key, edit:true}); }}, "원문 펼쳐 고쳐 적기"),
       h("button", {class:"btn small", type:"button", onclick: () => openCard(e.text, e.source)}, "법문 카드")];
-    if (isToday && store.canShare) tools.push(h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(async () => {
-      const ne = {...e, shared:!e.shared, updatedAt:Date.now()};
-      if (ne.shared) await store.putFeed(feedDoc(ne)); else await store.delFeed();
+    if (isToday && store.canShare && !e.shared) tools.push(h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(async () => {
+      const ne = {...e, shared:true, updatedAt:Date.now()};
+      await store.putFeed(feedDoc(ne));
       await store.putUser("j-" + key, ne);
-      S.user["j-" + key] = ne; setSharePref(ne.shared); store.pick(key, ne.pid);
-    })}, e.shared ? "나누기 그만두기" : "함께 읽기에 나누기"));
-    if (S.confirmDel === key){
-      tools.push(h("span", {class:"note"}, isToday ? "지우면 오늘 법문을 다시 고를 수 있습니다." : "이 날의 기록을 지울까요?"),
+      S.user["j-" + key] = ne; setSharePref(true); store.pick(key, ne.pid);
+    })}, "함께 읽기에 나누기"));
+    if (isToday){
+    } else if (S.confirmDel === key){
+      tools.push(h("span", {class:"note"}, "이 날의 기록을 지울까요?"),
         h("button", {class:"btn small danger", type:"button", disabled:S.busy, onclick: () => act(async () => {
-          if (e.shared && isToday) await store.delFeed();
           await store.delUser("j-" + key); delete S.user["j-" + key]; S.confirmDel = null; store.pick(key, null);
         })}, "지우기"),
         h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; render(); }}, "두기"));
     } else {
-      tools.push(h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = key; render(); }}, isToday ? "다시 고르기" : "지우기"));
+      tools.push(h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = key; render(); }}, "지우기"));
     }
     kids.push(h("div", {class:"row"}, tools));
   }
@@ -734,8 +734,8 @@ function renderSheet(){
   const ctx = contextOf(p);
   const isToday = o.date === dayKey();
   const save = () => act(async () => {
-    const key = "j-" + o.date, want = isToday && dr.share && store.canShare;
-    const was = !!(e && e.shared);
+    const key = "j-" + o.date;
+    const was = !!(e && e.shared), want = isToday && store.canShare && (dr.share || (o.edit && was));
     const entry = o.edit && e
       ? {...e, reason:dr.reason.trim(), note:dr.note.trim(), shared:was, updatedAt:Date.now()}
       : {date:o.date, pid:p.id, text:p.text, source:src, reason:dr.reason.trim(), note:dr.note.trim(), shared:false, at:Date.now()};
@@ -749,9 +749,6 @@ function renderSheet(){
       try{ await store.putFeed(feedDoc(entry)); entry.shared = true; }
       catch(err){ warn = was ? "고친 글은 이 폰에 간직했지만 함께 읽기에는 아직 반영하지 못했습니다. 인터넷이 될 때 다시 고쳐 적어 주세요."
         : "법문은 이 폰에 간직했지만 함께 읽기에는 올리지 못했습니다. 인터넷이 될 때 오늘 카드에서 '함께 읽기에 나누기'를 눌러 주세요."; }
-    } else if (was){
-      try{ await store.delFeed(); entry.shared = false; }
-      catch(err){ warn = "함께 읽기에서 내리지 못했습니다. 인터넷이 될 때 '나누기 그만두기'를 눌러 주세요."; }
     }
     if (entry.shared !== was || (!o.edit && entry.shared)){ try{ await store.putUser(key, entry); }catch(err){} }
     if (warn) S.warn = warn;
@@ -777,9 +774,9 @@ function renderSheet(){
       h("div", {class:"stack"},
         h("label", {for:"s-note", class:"label-strong"}, "나의 감상 · 나만의 해석"),
         h("textarea", {id:"s-note", class:"long", placeholder:"이 법문을 읽고 떠오른 생각, 내 삶에 비추어 본 뜻을 자유롭게 적어 보세요.", value:dr.note, oninput: ev => { dr.note = ev.target.value; keepDrafts(); }})),
-      isToday && store.canShare ? h("label", {class:"check", for:"s-share"},
+      isToday && store.canShare && !(o.edit && e && e.shared) ? h("label", {class:"check", for:"s-share"},
         h("input", {id:"s-share", type:"checkbox", checked:dr.share ? "checked" : null, onchange: ev => dr.share = ev.target.checked}),
-        h("span", null, "이름 없이 '함께 읽기'에 나누기", h("br"), h("span", {class:"note"}, "법문과 적은 글이 오늘 이 앱을 쓰는 다른 사람에게 이름 없이 보입니다."))) : null,
+        h("span", null, "이름 없이 '함께 읽기'에 나누기", h("br"), h("span", {class:"note"}, "법문과 적은 글이 오늘 이 앱을 쓰는 다른 사람에게 이름 없이 보입니다. 한 번 나눈 글은 거둘 수 없습니다."))) : null,
       isToday && !store.canShare ? h("p", {class:"note"}, "지금은 '함께 읽기'에 연결되어 있지 않습니다. 적은 글은 이 폰에만 남습니다.") : null,
       h("div", {class:"row"},
         h("button", {class:"btn primary", type:"button", disabled:S.busy, onclick: save}, o.edit ? "고친 대로 간직하기" : "오늘의 법문으로 간직하기"),
@@ -887,6 +884,7 @@ function wrapLines(g, text, maxW){
   });
   return lines;
 }
+const APP_URL = "https://seesun72.github.io/beopmun/";
 async function drawCard(text, source){
   const W = 1080, H = 1350, P = 110, c = document.createElement("canvas"); c.width = W; c.height = H;
   const g = c.getContext("2d"), F = '"Gowun Batang", "Noto Serif KR", "AppleMyungjo", serif';
@@ -905,6 +903,7 @@ async function drawCard(text, source){
   lines.forEach((l, i) => g.fillText(l, P, y0 + i * lh));
   g.fillStyle = "#5a6966"; g.font = `30px ${F}`; g.fillText(source, P, H - 170);
   g.fillStyle = "#1f5c4d"; g.font = `700 30px ${F}`; g.fillText("내 마음의 법문", P, H - 112);
+  g.fillStyle = "#5a6966"; g.font = `26px ${F}`; g.textAlign = "right"; g.fillText(APP_URL.replace("https://", "").replace(/\/$/, ""), W - P, H - 112); g.textAlign = "left";
   return c;
 }
 async function openCard(text, source){
@@ -914,11 +913,14 @@ async function openCard(text, source){
   const blob = await new Promise(r => c.toBlob(r, "image/png"));
   const url = URL.createObjectURL(blob), file = new File([blob], "법문카드.png", {type:"image/png"});
   const share = !!(navigator.canShare && navigator.canShare({files:[file]}));
+  const msg = "「내 마음의 법문」 " + source + "\n" + APP_URL;
   modal("법문 카드", [h("img", {src:url, class:"cardimg", alt:source + " 법문 카드"}),
     h("div", {class:"row"},
-      share ? h("button", {class:"btn primary", type:"button", onclick: async () => { try{ await navigator.share({files:[file]}); }catch(e){} }}, "보내기") : null,
-      h("a", {class:"btn", href:url, download:"법문카드.png"}, "사진으로 저장")),
-    h("p", {class:"note"}, share ? "'보내기'를 누르면 카카오톡이나 문자로 보낼 수 있습니다." : "사진으로 저장한 뒤 카카오톡이나 문자에 붙여 보내세요.")]);
+      share ? h("button", {class:"btn primary", type:"button", onclick: async () => { try{ await navigator.share({files:[file], text:msg}); }catch(e){} }}, "보내기") : null,
+      h("a", {class:"btn", href:url, download:"법문카드.png"}, "사진으로 저장"),
+      h("button", {class:"btn", type:"button", onclick: async ev => { const b = ev.currentTarget; try{ await navigator.clipboard.writeText(msg); b.textContent = "주소를 복사했습니다"; }catch(e){ b.textContent = APP_URL; } }}, "앱 주소 복사")),
+    h("p", {class:"note"}, share ? "'보내기'를 누르면 카드와 함께 앱으로 가는 주소가 전해집니다. 주소가 빠지는 앱에서는 '앱 주소 복사'를 눌러 붙여 넣어 주세요."
+      : "사진으로 저장하고 '앱 주소 복사'를 눌러, 카카오톡이나 문자에 함께 붙여 보내세요.")]);
 }
 
 /* ───── 자동 백업 (암호로 잠가 서버에 보관) ───── */

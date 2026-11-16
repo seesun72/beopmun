@@ -131,7 +131,9 @@ nav .sm{display:none}
 }
 .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 html{font-size:calc(100% * var(--fs,1))}
-header.top .fs{margin-left:auto;display:flex;gap:6px;flex:none}
+header.top .tools{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none}
+header.top .fs{display:flex;gap:6px}
+#theme-btn{min-width:44px;font-size:1.15rem;line-height:1.2}
 .foot{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;border-top:1px solid var(--line);padding-top:14px}
 .btn.quiet{border-color:transparent;color:var(--muted)}
 a.btn{text-decoration:none;display:inline-block}
@@ -162,9 +164,12 @@ h3.sec{font-family:var(--f-scripture);font-size:1.1rem;margin:14px 0 0}
       <h1>내 마음의 법문</h1>
       <div class="date" id="date"></div>
     </div>
-    <div class="fs" role="group" aria-label="글씨 크기">
-      <button class="btn small" type="button" id="fs-minus" aria-label="글씨 작게">가−</button>
-      <button class="btn small" type="button" id="fs-plus" aria-label="글씨 크게">가+</button>
+    <div class="tools">
+      <div class="fs" role="group" aria-label="글씨 크기">
+        <button class="btn small" type="button" id="fs-minus" aria-label="글씨 작게">가−</button>
+        <button class="btn small" type="button" id="fs-plus" aria-label="글씨 크게">가+</button>
+      </div>
+      <button class="btn small" type="button" id="theme-btn"></button>
     </div>
   </header>
   <nav aria-label="꼭지">
@@ -340,7 +345,6 @@ function viewToday(){
   const key = dayKey(), saved = S.user["j-" + key];
   if (saved){
     return [
-      installBanner(),
       h("h2", null, "오늘 간직한 법문"),
       entryCard(key, saved, true),
       h("p", {class:"note"}, "내일 새 법문 세 구절이 준비됩니다.")
@@ -351,7 +355,6 @@ function viewToday(){
   if (!d) return h("p", {class:"lead"}, "오늘의 법문을 고르고 있습니다.");
   const left = MAX_REROLL - d.rerolls;
   const out = [
-    installBanner(),
     h("h2", null, "오늘 하루 내 마음에 와닿는 법문은 무엇인가요?"),
     h("p", {class:"lead"}, "마음에 와닿는 구절을 누르면 원문을 다시 펼쳐 놓고 감상과 해석을 적을 수 있습니다."),
     h("div", {class:"stack"}, d.current.map(id => {
@@ -818,17 +821,28 @@ document.getElementById("fs-minus").addEventListener("click", () => setFs(getFs(
 document.getElementById("fs-plus").addEventListener("click", () => setFs(getFs() + 1));
 setFs(getFs());
 
+/* ───── 화면 밝기 (밝게 · 어둡게) ───── */
+function getTheme(){
+  let t = null; try{ t = localStorage.getItem("beopmun.theme"); }catch(e){}
+  if (t === "light" || t === "dark") return t;
+  return window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+function setTheme(t, keep){
+  document.documentElement.setAttribute("data-theme", t);
+  if (keep){ try{ localStorage.setItem("beopmun.theme", t); }catch(e){} }
+  const b = document.getElementById("theme-btn"), dark = t === "dark";
+  b.textContent = dark ? "☀" : "☾";
+  b.setAttribute("aria-label", dark ? "밝은 화면으로 바꾸기" : "어두운 화면으로 바꾸기");
+  b.title = dark ? "밝은 화면" : "어두운 화면";
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = dark ? "#111816" : "#1f5c4d";
+}
+document.getElementById("theme-btn").addEventListener("click", () => setTheme(getTheme() === "dark" ? "light" : "dark", true));
+setTheme(getTheme(), false);
+
 /* ───── 설치 안내 · 앱 안내 ───── */
 const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
 let installEvt = null;
 addEventListener("beforeinstallprompt", ev => { ev.preventDefault(); installEvt = ev; });
-function installBanner(){
-  let off = false; try{ off = localStorage.getItem("beopmun.install") === "0"; }catch(e){}
-  if (off || isStandalone()) return null;
-  return h("div", {class:"banner row spread"}, h("span", null, "홈 화면에 추가하면 앱처럼 바로 열 수 있습니다."),
-    h("span", {class:"row"}, h("button", {class:"btn small primary", type:"button", onclick: openInstall}, "설치 방법"),
-      h("button", {class:"btn small", type:"button", onclick: () => { try{ localStorage.setItem("beopmun.install", "0"); }catch(e){} render(); }}, "다음에")));
-}
 function openInstall(){
   const ua = navigator.userAgent, ios = /iPhone|iPad|iPod/.test(ua), and = /Android/.test(ua);
   const steps = ios ? ["Safari로 이 앱을 엽니다. 카카오톡 안에서 열렸다면 오른쪽 아래 단추를 눌러 'Safari로 열기'를 고릅니다.",

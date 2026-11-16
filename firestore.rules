@@ -1,11 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 함께 읽기: 누구나 읽고, 각자는 자기 글 하나만 쓰고 지울 수 있습니다.
-    match /feed/{uid} {
+    function signedIn() { return request.auth != null; }
+    // 관리자: Firebase 콘솔에 게시할 때 아래 ADMIN_EMAIL 자리에 관리자 구글 계정 주소를 넣습니다. (이 파일에는 주소를 적지 않습니다)
+    function isAdmin() { return signedIn() && request.auth.token.email == 'ADMIN_EMAIL' && request.auth.token.email_verified == true; }
+    function mine(id) { return signedIn() && id.matches(request.auth.uid + '_[0-9]{4}-[0-9]{2}-[0-9]{2}'); }
+
+    // 함께 읽기: 누구나 읽고, 각자는 하루에 자기 글 하나만 쓰고 지울 수 있습니다. 글은 날짜별로 남아 관리자에게 이름 없이 모입니다.
+    match /feed/{id} {
       allow read: if true;
-      allow delete: if request.auth != null && request.auth.uid == uid;
-      allow create, update: if request.auth != null && request.auth.uid == uid
+      allow delete: if mine(id) || isAdmin();
+      allow create, update: if signedIn() && id == request.auth.uid + '_' + request.resource.data.date
         && request.resource.data.keys().hasOnly(['date','pid','text','source','reason','note','at','updatedAt'])
         && request.resource.data.date is string && request.resource.data.date.size() == 10
         && request.resource.data.text is string && request.resource.data.text.size() <= 4000
@@ -14,6 +19,64 @@ service cloud.firestore {
         && request.resource.data.note is string && request.resource.data.note.size() <= 6000
         && request.resource.data.pid is string && request.resource.data.pid.size() <= 80
         && request.resource.data.at is number && request.resource.data.updatedAt is number;
+    }
+    // 관리자가 가린 글 목록
+    match /hidden/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    // 합장(공감): 글 하나에 한 사람이 한 번
+    match /likes/{id} {
+      allow read: if true;
+      allow delete: if signedIn() && id.matches('.*_' + request.auth.uid);
+      allow create: if signedIn() && id == request.resource.data.feedId + '_' + request.auth.uid
+        && request.resource.data.keys().hasOnly(['feedId','date','at'])
+        && request.resource.data.feedId is string && request.resource.data.feedId.size() <= 200
+        && request.resource.data.date is string && request.resource.data.date.size() == 10
+        && request.resource.data.at is number;
+    }
+    // 신고: 누구나 보낼 수 있고 관리자만 봅니다.
+    match /reports/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if signedIn() && id == request.resource.data.feedId + '_' + request.auth.uid
+        && request.resource.data.keys().hasOnly(['feedId','date','why','at'])
+        && request.resource.data.feedId is string && request.resource.data.feedId.size() <= 200
+        && request.resource.data.date is string && request.resource.data.date.size() <= 10
+        && request.resource.data.why is string && request.resource.data.why.size() <= 200
+        && request.resource.data.at is number;
+    }
+    // 오탈자 알림: 누구나 보낼 수 있고 관리자만 봅니다.
+    match /typos/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['pid','source','note','at'])
+        && request.resource.data.pid is string && request.resource.data.pid.size() <= 80
+        && request.resource.data.source is string && request.resource.data.source.size() <= 200
+        && request.resource.data.note is string && request.resource.data.note.size() > 0 && request.resource.data.note.size() <= 1000
+        && request.resource.data.at is number;
+    }
+    // 통계용: 고른 법문의 출처만 (적은 글은 없음). 관리자만 읽습니다.
+    match /picks/{id} {
+      allow read: if isAdmin();
+      allow delete: if mine(id);
+      allow create, update: if signedIn() && id == request.auth.uid + '_' + request.resource.data.date
+        && request.resource.data.keys().hasOnly(['date','pid'])
+        && request.resource.data.date is string && request.resource.data.date.size() == 10
+        && request.resource.data.pid is string && request.resource.data.pid.size() <= 80;
+    }
+    // 자동 백업: 암호문만 보관. 백업 코드를 아는 사람만 문서를 찾아 읽고 고칠 수 있습니다. 목록은 볼 수 없습니다.
+    match /backups/{id} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && validBackup();
+      allow update: if signedIn() && validBackup() && request.resource.data.wkey == resource.data.wkey;
+      function validBackup() {
+        return request.resource.data.keys().hasOnly(['wkey','iv','blob','updatedAt'])
+          && request.resource.data.wkey is string && request.resource.data.wkey.size() == 64
+          && request.resource.data.iv is string && request.resource.data.iv.size() <= 40
+          && request.resource.data.blob is string && request.resource.data.blob.size() < 1000000
+          && request.resource.data.updatedAt is number;
+      }
     }
     match /{document=**} { allow read, write: if false; }
   }

@@ -39,7 +39,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:16px;line-height:1.65;-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:1rem;line-height:1.65;-webkit-text-size-adjust:100%}
 .wrap{max-width:680px;margin:0 auto;padding:calc(28px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(72px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));display:flex;flex-direction:column;gap:24px}
 header.top{display:flex;align-items:center;gap:16px}
 .ilwon{width:56px;height:56px;flex:none}
@@ -130,6 +130,28 @@ nav .sm{display:none}
   .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 }
 .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+html{font-size:calc(100% * var(--fs,1))}
+header.top .fs{margin-left:auto;display:flex;gap:6px;flex:none}
+.foot{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;border-top:1px solid var(--line);padding-top:14px}
+.btn.quiet{border-color:transparent;color:var(--muted)}
+a.btn{text-decoration:none;display:inline-block}
+.modal{position:fixed;inset:0;z-index:30;background:rgba(10,20,18,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.modal-in{width:100%;max-width:520px;max-height:90%;overflow-y:auto;gap:14px}
+.modal-msg:empty{display:none}
+.cardimg{width:100%;border:1px solid var(--line);border-radius:6px}
+.steps{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:8px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-variant-numeric:tabular-nums}
+.cal-w{font-size:.78rem;color:var(--muted)}
+.cal-d{font:inherit;color:var(--muted);background:none;border:1px solid transparent;border-radius:50%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;padding:0;max-width:44px;width:100%;margin:0 auto}
+.cal-d.on{color:var(--ink);font-weight:600;border-color:var(--ring);cursor:pointer;box-shadow:inset 0 0 0 2px var(--surface),inset 0 0 0 20px color-mix(in srgb,var(--ring) 22%,transparent)}
+.cal-d.today{text-decoration:underline;text-underline-offset:4px}
+h3.sec{font-family:var(--f-scripture);font-size:1.1rem;margin:14px 0 0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column}
+.tile strong{font-size:1.6rem;font-variant-numeric:tabular-nums}
+.tile span{font-size:.82rem;color:var(--muted)}
+.bars{display:flex;align-items:flex-end;gap:2px;height:90px;border-bottom:1px solid var(--line)}
+.bars i{flex:1;background:var(--accent);min-height:1px;border-radius:2px 2px 0 0}
 </style>
 </head>
 <body>
@@ -139,6 +161,10 @@ nav .sm{display:none}
     <div>
       <h1>내 마음의 법문</h1>
       <div class="date" id="date"></div>
+    </div>
+    <div class="fs" role="group" aria-label="글씨 크기">
+      <button class="btn small" type="button" id="fs-minus" aria-label="글씨 작게">가−</button>
+      <button class="btn small" type="button" id="fs-plus" aria-label="글씨 크게">가+</button>
     </div>
   </header>
   <nav aria-label="꼭지">
@@ -150,6 +176,11 @@ nav .sm{display:none}
   </nav>
   <div id="notice"></div>
   <main id="main"><p class="lead">법문을 불러오고 있습니다.</p></main>
+  <footer class="foot">
+    <button class="btn small quiet" type="button" id="lnk-install">설치 안내</button>
+    <button class="btn small quiet" type="button" id="lnk-about">앱 안내</button>
+    <a class="btn small quiet" href="#admin">관리자</a>
+  </footer>
 </div>
 <script src="jeongjeon.js"></script>
 <script src="daejonggyeong.js"></script>
@@ -231,26 +262,33 @@ const store = {
     }catch(e){ this.db = null; this.canShare = false; }
   },
   async loadUser(){ return {...this.mem.user}; },
-  async putUser(k, data){ this.mem.user[k] = data; if (!this.writeLocal()) throw {code:"quota_exceeded"}; },
-  async delUser(k){ delete this.mem.user[k]; this.writeLocal(); },
+  async putUser(k, data){ this.mem.user[k] = data; if (!this.writeLocal()) throw {code:"quota_exceeded"}; if (k.startsWith("j-")) scheduleBackup(); },
+  async delUser(k){ delete this.mem.user[k]; this.writeLocal(); if (k.startsWith("j-")) scheduleBackup(); },
+  feedId(date){ return this.uid + "_" + date; },
   async putFeed(entry){
     if (!this.canShare) return;
-    await withTimeout(this.db.collection("feed").doc(this.uid).set(entry));
+    await withTimeout(this.db.collection("feed").doc(this.feedId(entry.date)).set(entry));
   },
-  async delFeed(id){
+  async delFeed(date){
     if (!this.db) return;
-    await withTimeout(this.db.collection("feed").doc(id || this.uid).delete());
+    await withTimeout(this.db.collection("feed").doc(this.feedId(date || dayKey())).delete());
   },
-  watchFeed(date, next, error){
+  watch(col, date, next, error){
     if (!this.db) return null;
-    return this.db.collection("feed").where("date", "==", date).limit(500).onSnapshot({includeMetadataChanges:true}, next, error);
+    return this.db.collection(col).where("date", "==", date).onSnapshot({includeMetadataChanges:true}, next, error);
+  },
+  pick(date, pid){
+    if (!this.canShare) return;
+    const r = this.db.collection("picks").doc(this.feedId(date));
+    (pid ? r.set({date, pid:String(pid).slice(0, 80)}) : r.delete()).catch(() => {});
   }
 };
 
 /* ───── 상태 ───── */
 const S = { ready:false, passages:[], user:{}, sel:null, sheet:null, drafts:{}, editing:null, editText:"", confirmDel:null,
   quiz:null, session:{right:0,total:0,streak:0}, lib:{book:"전체", part:"", q:"", shown:30}, busy:false,
-  feed:{date:null, items:[], state:"loading", unsub:null, timer:null}, confirmFeed:null };
+  feed:{date:null, items:[], state:"loading", unsub:null, timer:null, likes:Object.create(null), myLikes:new Set(), hidden:new Set()}, confirmFeed:null,
+  cal:{y:new Date().getFullYear(), m:new Date().getMonth()}, warn:"", okmsg:"" };
 function sharePref(){ try{ return localStorage.getItem("beopmun.share") !== "0"; }catch(e){ return true; } }
 function setSharePref(v){ try{ localStorage.setItem("beopmun.share", v ? "1" : "0"); }catch(e){} }
 const byId = id => S.passages.find(p => p.id === id);
@@ -273,6 +311,8 @@ async function act(fn){
   try{ await fn(); }catch(e){ fail(e); }
   S.busy = false; render();
   if (S.warn){ say(S.warn, true); S.warn = ""; }
+  else if (S.okmsg){ say(S.okmsg); }
+  S.okmsg = "";
 }
 
 /* ───── 오늘의 법문 ───── */
@@ -300,6 +340,7 @@ function viewToday(){
   const key = dayKey(), saved = S.user["j-" + key];
   if (saved){
     return [
+      installBanner(),
       h("h2", null, "오늘 간직한 법문"),
       entryCard(key, saved, true),
       h("p", {class:"note"}, "내일 새 법문 세 구절이 준비됩니다.")
@@ -310,6 +351,7 @@ function viewToday(){
   if (!d) return h("p", {class:"lead"}, "오늘의 법문을 고르고 있습니다.");
   const left = MAX_REROLL - d.rerolls;
   const out = [
+    installBanner(),
     h("h2", null, "오늘 하루 내 마음에 와닿는 법문은 무엇인가요?"),
     h("p", {class:"lead"}, "마음에 와닿는 구절을 누르면 원문을 다시 펼쳐 놓고 감상과 해석을 적을 수 있습니다."),
     h("div", {class:"stack"}, d.current.map(id => {
@@ -342,18 +384,19 @@ function entryCard(key, e, isToday){
     if (e.reason) kids.push(h("h3", null, "와닿은 이유"), h("div", {class:"reason"}, e.reason));
     if (e.note) kids.push(h("h3", null, "나의 감상 · 나만의 해석"), h("div", {class:"reason"}, e.note));
     if (!e.reason && !e.note) kids.push(h("div", {class:"note"}, "적어 둔 마음이 없습니다."));
-    const tools = [h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; openSheet({pid:e.pid, date:key, edit:true}); }}, "원문 펼쳐 고쳐 적기")];
+    const tools = [h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; openSheet({pid:e.pid, date:key, edit:true}); }}, "원문 펼쳐 고쳐 적기"),
+      h("button", {class:"btn small", type:"button", onclick: () => openCard(e.text, e.source)}, "법문 카드")];
     if (isToday && store.canShare) tools.push(h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(async () => {
       const ne = {...e, shared:!e.shared, updatedAt:Date.now()};
       if (ne.shared) await store.putFeed(feedDoc(ne)); else await store.delFeed();
       await store.putUser("j-" + key, ne);
-      S.user["j-" + key] = ne; setSharePref(ne.shared);
+      S.user["j-" + key] = ne; setSharePref(ne.shared); store.pick(key, ne.pid);
     })}, e.shared ? "나누기 그만두기" : "함께 읽기에 나누기"));
     if (S.confirmDel === key){
       tools.push(h("span", {class:"note"}, isToday ? "지우면 오늘 법문을 다시 고를 수 있습니다." : "이 날의 기록을 지울까요?"),
         h("button", {class:"btn small danger", type:"button", disabled:S.busy, onclick: () => act(async () => {
           if (e.shared && isToday) await store.delFeed();
-          await store.delUser("j-" + key); delete S.user["j-" + key]; S.confirmDel = null;
+          await store.delUser("j-" + key); delete S.user["j-" + key]; S.confirmDel = null; store.pick(key, null);
         })}, "지우기"),
         h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; render(); }}, "두기"));
     } else {
@@ -361,7 +404,7 @@ function entryCard(key, e, isToday){
     }
     kids.push(h("div", {class:"row"}, tools));
   }
-  return h("article", {class:"card entry"}, kids);
+  return h("article", {class:"card entry", id:"e-" + key}, kids);
 }
 function backupCard(){
   return h("details", {class:"card"},
@@ -386,23 +429,63 @@ function backupCard(){
         f.text().then(t => { const d = JSON.parse(t); if (!d || d.app !== "beopmun" || typeof d.user !== "object") throw 0;
           let n = 0; Object.keys(d.user).forEach(k => { const v = d.user[k];
             if (/^j-\d{4}-\d{2}-\d{2}$/.test(k) && !S.user[k] && v && typeof v.text === "string"){ const c = {...v, shared:false}; S.user[k] = c; store.mem.user[k] = c; n++; } });
-          store.writeLocal(); say(`기록 ${n}일을 불러왔습니다. 같은 날짜에 이미 있는 기록은 그대로 두었습니다.`); render(); })
+          store.writeLocal(); scheduleBackup(); say(`기록 ${n}일을 불러왔습니다. 같은 날짜에 이미 있는 기록은 그대로 두었습니다.`); render(); })
         .catch(() => say("이 파일은 내 마음의 법문 기록이 아닙니다.", true))
         .finally(() => { ev.target.value = ""; });
       }})));
 }
+function calendar(has){
+  const C = S.cal, first = new Date(C.y, C.m, 1).getDay(), days = new Date(C.y, C.m + 1, 0).getDate(), today = dayKey();
+  const move = d => { const t = new Date(C.y, C.m + d, 1); C.y = t.getFullYear(); C.m = t.getMonth(); render(); };
+  const cells = "일월화수목금토".split("").map(w => h("div", {class:"cal-w"}, w));
+  for (let i = 0; i < first; i++) cells.push(h("div"));
+  for (let d = 1; d <= days; d++){
+    const k = `${C.y}-${pad(C.m + 1)}-${pad(d)}`, cls = "cal-d" + (k === today ? " today" : "");
+    cells.push(has.has(k)
+      ? h("button", {class:cls + " on", type:"button", "aria-label":`${C.m + 1}월 ${d}일, 간직한 법문 보기`,
+          onclick: () => { const el = document.getElementById("e-" + k); if (el) el.scrollIntoView({behavior:"smooth", block:"start"}); }}, d)
+      : h("div", {class:cls}, d));
+  }
+  return h("div", {class:"card"},
+    h("div", {class:"row spread"},
+      h("button", {class:"btn small", type:"button", "aria-label":"이전 달", onclick: () => move(-1)}, "‹"),
+      h("strong", null, `${C.y}년 ${C.m + 1}월`),
+      h("button", {class:"btn small", type:"button", "aria-label":"다음 달", onclick: () => move(1)}, "›")),
+    h("div", {class:"cal"}, cells));
+}
+function autoBackupCard(){
+  const B = bk(), kids = [h("summary", null, B.code ? "자동 백업 켜짐" : "자동 백업")];
+  if (!store.canShare) kids.push(h("p", {class:"note"}, "인터넷에 연결되면 자동 백업을 쓸 수 있습니다."));
+  else if (!B.code){
+    kids.push(h("p", {class:"note"}, "켜 두면 법문을 간직할 때마다 기록이 암호로 잠겨 서버에 보관됩니다. 폰을 바꿔도 백업 코드만 있으면 되찾을 수 있고, 코드 없이는 관리자도 내용을 볼 수 없습니다."),
+      h("div", {class:"row"}, h("button", {class:"btn primary small", type:"button", disabled:S.busy,
+        onclick: () => act(async () => { setBk({code:newCode(), last:0}); await doBackup(); })}, "자동 백업 켜기")));
+  } else {
+    kids.push(h("p", {class:"note"}, B.last ? `마지막 백업: ${dayText(dayKey(new Date(B.last)))} ${timeText(B.last)}` : "아직 백업되지 않았습니다. '지금 백업'을 눌러 주세요."),
+      h("p", null, "백업 코드 ", h("code", {id:"bk-code"}, B.code)),
+      h("p", {class:"note"}, "이 코드를 적어 두거나 나에게 보내는 메시지로 남겨 두세요. 새 폰에서 이 코드를 넣으면 기록이 돌아옵니다."),
+      h("div", {class:"row"},
+        h("button", {class:"btn small", type:"button", onclick: async () => {
+          try{ await navigator.clipboard.writeText(B.code); say("백업 코드를 복사했습니다."); }
+          catch(e){ say("복사하지 못했습니다. 코드를 직접 적어 주세요.", true); } }}, "코드 복사"),
+        h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(doBackup)}, "지금 백업"),
+        h("button", {class:"btn small", type:"button", onclick: () => { setBk({}); render(); }}, "자동 백업 끄기")));
+  }
+  if (store.canShare) kids.push(h("form", {class:"stack", onsubmit: ev => { ev.preventDefault(); const v = document.getElementById("bk-in").value; act(() => restoreBackup(v)); }},
+    h("label", {for:"bk-in"}, "다른 폰에서 쓰던 백업 코드로 기록 되찾기", h("input", {id:"bk-in", placeholder:"XXXX-XXXX-XXXX-XXXX", autocomplete:"off"})),
+    h("div", null, h("button", {class:"btn small", type:"submit", disabled:S.busy}, "기록 되찾기"))));
+  return h("details", {class:"card"}, kids);
+}
 function viewJournal(){
   const keys = Object.keys(S.user).filter(k => k.startsWith("j-")).map(k => k.slice(2)).sort().reverse();
-  if (!keys.length) return [h("h2", null, "마음 돌아보기"),
-    h("p", {class:"lead"}, "아직 간직한 법문이 없습니다. 오늘의 법문에서 한 구절을 골라 보세요."),
-    h("div", null, h("a", {class:"btn", href:"#today"}, "오늘의 법문으로"))];
-  const out = [h("div", {class:"row spread"}, h("h2", null, "마음 돌아보기"), h("span", {class:"tally"}, `간직한 법문 ${keys.length}일`)), backupCard()];
-  let month = "";
-  keys.forEach(k => {
-    const m = k.slice(0, 7);
-    if (m !== month){ month = m; out.push(h("div", {class:"month"}, `${+m.slice(0,4)}년 ${+m.slice(5)}월`)); }
-    out.push(entryCard(k, S.user["j-" + k], k === dayKey()));
-  });
+  const C = S.cal, mk = `${C.y}-${pad(C.m + 1)}`, inMonth = keys.filter(k => k.startsWith(mk));
+  const out = [h("div", {class:"row spread"}, h("h2", null, "마음 돌아보기"), h("span", {class:"tally"}, `모두 ${keys.length}일 · 이 달 ${inMonth.length}일`)),
+    calendar(new Set(inMonth))];
+  if (!keys.length) out.push(h("p", {class:"lead"}, "아직 간직한 법문이 없습니다. 오늘의 법문에서 한 구절을 골라 보세요."),
+    h("div", null, h("a", {class:"btn", href:"#today"}, "오늘의 법문으로")));
+  else if (!inMonth.length) out.push(h("p", {class:"lead"}, "이 달에는 간직한 법문이 없습니다."));
+  inMonth.forEach(k => out.push(entryCard(k, S.user["j-" + k], k === dayKey())));
+  out.push(autoBackupCard(), backupCard());
   return out;
 }
 
@@ -494,7 +577,9 @@ function viewLibrary(){
     && (!q || p.text.includes(q) || sourceLabel(p).includes(q)));
   out.push(h("p", {class:"tally"}, `${list.length}건`));
   list.slice(0, L.shown).forEach(p => out.push(h("article", {class:"card"},
-    h("div", {class:"scripture"}, p.text), h("div", {class:"source"}, sourceLabel(p)))));
+    h("div", {class:"scripture"}, p.text), h("div", {class:"source"}, sourceLabel(p)),
+    h("div", {class:"row"}, h("button", {class:"btn small", type:"button", onclick: () => openCard(p.text, sourceLabel(p))}, "법문 카드"),
+      h("button", {class:"btn small quiet", type:"button", onclick: () => openTypo(p.id, sourceLabel(p))}, "오탈자 알리기")))));
   if (list.length > L.shown) out.push(h("div", null,
     h("button", {class:"btn", type:"button", onclick: () => { L.shown += 30; render(); }}, "더 보기")));
   return out;
@@ -508,12 +593,13 @@ function feedDoc(e){
 }
 function startFeed(){
   const F = S.feed, date = dayKey();
-  if (F.unsub){ try{ F.unsub(); }catch(e){} F.unsub = null; }
+  ["unsub", "unsub2", "unsub3"].forEach(k => { if (F[k]){ try{ F[k](); }catch(e){} F[k] = null; } });
+  F.likes = Object.create(null); F.myLikes = new Set(); F.hidden = new Set();
   clearTimeout(F.timer);
   F.date = date; F.items = []; F.state = "loading";
   if (!store.db){ F.state = "off"; return; }
   F.timer = setTimeout(() => { if (F.state === "loading"){ F.state = "slow"; if (currentView() === "together") render(); } }, 10000);
-  F.unsub = store.watchFeed(date, snap => {
+  F.unsub = store.watch("feed", date, snap => {
     F.items = snap.docs.map(d => ({id:d.id, ...d.data()}))
       .filter(x => x.date === date && typeof x.text === "string")
       .sort((a, b) => (b.updatedAt || b.at || 0) - (a.updatedAt || a.at || 0));
@@ -521,6 +607,12 @@ function startFeed(){
     else if (F.state === "loading") F.state = "cached";
     if (currentView() === "together" && !S.sheet) render();
   }, err => { clearTimeout(F.timer); F.state = "error"; if (currentView() === "together") render(); });
+  F.unsub2 = store.watch("likes", date, snap => {
+    const c = Object.create(null), m = new Set();
+    snap.docs.forEach(d => { const x = d.data(); if (typeof x.feedId !== "string") return; c[x.feedId] = (c[x.feedId] || 0) + 1; if (d.id === x.feedId + "_" + store.uid) m.add(x.feedId); });
+    F.likes = c; F.myLikes = m; if (currentView() === "together" && !S.sheet) render();
+  }, () => {});
+  F.unsub3 = store.watch("hidden", date, snap => { F.hidden = new Set(snap.docs.map(d => d.id)); if (currentView() === "together" && !S.sheet) render(); }, () => {});
 }
 let shownDay = null;
 async function checkNewDay(){
@@ -540,12 +632,33 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 addEventListener("pageshow", checkNewDay);
 addEventListener("focus", checkNewDay);
 function timeText(ms){ const d = new Date(ms); return isNaN(d) ? "" : `${d.getHours() < 12 ? "오전" : "오후"} ${((d.getHours() + 11) % 12) + 1}:${pad(d.getMinutes())}`; }
+function reported(){ try{ const a = JSON.parse(localStorage.getItem("beopmun.reported") || "[]"); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+async function toggleLike(x){
+  if (!store.canShare) return;
+  const ref = store.db.collection("likes").doc(x.id + "_" + store.uid);
+  try{ await withTimeout(S.feed.myLikes.has(x.id) ? ref.delete() : ref.set({feedId:x.id, date:x.date, at:Date.now()})); }catch(e){ fail(e); }
+}
+function openReport(x){
+  const inp = h("input", {id:"rep-why", maxlength:"200", placeholder:"(선택) 신고하는 까닭"});
+  modal("이 글 신고하기", [
+    h("p", {class:"note"}, "부적절한 글이라면 관리자에게 알려 주세요. 누가 신고했는지는 표시되지 않습니다."),
+    h("label", {for:"rep-why"}, "까닭", inp),
+    h("div", {class:"row"}, h("button", {class:"btn primary", type:"button", onclick: async ev => {
+      ev.target.disabled = true;
+      try{
+        await withTimeout(store.db.collection("reports").doc(x.id + "_" + store.uid).set({feedId:x.id, date:x.date, why:inp.value.trim().slice(0, 200), at:Date.now()}));
+        try{ localStorage.setItem("beopmun.reported", JSON.stringify(reported().concat(x.id).slice(-200))); }catch(e){}
+        closeModal(); render(); say("신고했습니다. 관리자가 살펴보겠습니다.");
+      }catch(e){ ev.target.disabled = false; modalMsg("보내지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요."); }
+    }}, "신고하기"))]);
+}
 function viewTogether(){
-  const F = S.feed, items = F.items;
+  const F = S.feed, myId = store.uid ? store.feedId(F.date || dayKey()) : null;
+  const items = F.items.filter(x => !F.hidden.has(x.id) || x.id === myId);
   const live = F.state === "live" || F.state === "cached";
   const out = [h("div", {class:"row spread"}, h("h2", null, "오늘 함께 고른 법문"),
     h("span", {class:"live" + (live ? "" : " off")}, h("i"), live ? "실시간" : F.state === "loading" ? "불러오는 중" : "연결 안 됨"))];
-  if (F.state === "off") return out.concat(h("p", {class:"lead"}, navigator.onLine === false ? "인터넷에 연결되면 오늘 다른 사람들이 나눈 법문을 볼 수 있습니다." : "함께 읽기 서버가 아직 연결되지 않았습니다. 오늘의 법문과 마음 돌아보기는 그대로 쓸 수 있습니다."));
+  if (F.state === "off") return out.concat(h("p", {class:"lead"}, navigator.onLine === false ? "인터넷에 연결되면 오늘 다른 사람들이 나눈 법문을 볼 수 있습니다." : "함께 읽기 서버에 연결하지 못했습니다. 오늘의 법문과 마음 돌아보기는 그대로 쓸 수 있습니다."));
   if (F.state === "error") return out.concat(h("p", {class:"lead"}, "나눈 글을 불러오지 못했습니다. 화면을 다시 열어 주세요."));
   if (F.state === "slow" && !items.length) return out.concat(h("p", {class:"lead"}, "나눈 글에 아직 닿지 못했습니다. 연결이 되면 저절로 나타납니다."));
   out.push(h("p", {class:"lead"}, items.length ? `오늘 ${items.length}명이 이름 없이 법문을 나누었습니다. 새 글은 저절로 나타납니다.` : "오늘은 아직 나눈 글이 없습니다. 첫 법문을 나누어 보세요."));
@@ -554,18 +667,17 @@ function viewTogether(){
   if (!store.canShare) out.push(h("p", {class:"note"}, "지금은 함께 읽기에 글을 나눌 수 없습니다. 내가 고른 법문은 이 폰에만 남습니다."));
   else if (!mine) out.push(h("div", null, h("a", {class:"btn primary", href:"#today"}, "오늘의 법문 고르러 가기")));
   else if (!mine.shared) out.push(h("p", {class:"note"}, "내가 오늘 고른 법문은 아직 나누지 않았습니다. 오늘의 법문 화면에서 나눌 수 있습니다."));
+  const rep = reported();
   items.forEach(x => {
-    const isMine = x.id === store.uid;
-    const tools = [];
-    if (false){
-      if (S.confirmFeed === x.id) tools.push(h("span", {class:"note"}, "이 글을 내릴까요?"),
-        h("button", {class:"btn small danger", type:"button", disabled:S.busy, onclick: () => act(async () => { await store.delFeed(x.id); S.confirmFeed = null; })}, "내리기"),
-        h("button", {class:"btn small", type:"button", onclick: () => { S.confirmFeed = null; render(); }}, "두기"));
-      else tools.push(h("button", {class:"btn small", type:"button", onclick: () => { S.confirmFeed = x.id; render(); }}, "글 내리기"));
-    }
+    const isMine = x.id === myId, n = F.likes[x.id] || 0, liked = F.myLikes.has(x.id), tools = [];
+    if (store.canShare && !isMine){
+      tools.push(h("button", {class:"btn small" + (liked ? " primary" : ""), type:"button", "aria-pressed":String(liked), onclick: () => toggleLike(x)}, "합장" + (n ? " " + n : "")));
+      tools.push(rep.includes(x.id) ? h("span", {class:"note"}, "신고했습니다") : h("button", {class:"btn small quiet", type:"button", onclick: () => openReport(x)}, "신고"));
+    } else if (n) tools.push(h("span", {class:"pill"}, "합장 " + n));
     out.push(h("article", {class:"card entry"},
       h("div", {class:"row spread"}, h("span", {class:"when"}, timeText(x.updatedAt || x.at)),
         h("span", {class:"row"}, count[x.pid] > 1 ? h("span", {class:"pill"}, `같은 법문 ${count[x.pid]}명`) : null, isMine ? h("span", {class:"pill mine"}, "내가 나눈 글") : null)),
+      isMine && F.hidden.has(x.id) ? h("p", {class:"note"}, "관리자가 가린 글입니다. 다른 사람에게는 보이지 않습니다.") : null,
       h("div", {class:"scripture"}, clip(x.text, 4000)),
       h("div", {class:"source"}, clip(x.source, 200)),
       x.reason ? [h("h3", null, "와닿은 이유"), h("div", {class:"reason"}, clip(x.reason, 2000))] : null,
@@ -629,6 +741,7 @@ function renderSheet(){
       : {date:o.date, pid:p.id, text:p.text, source:src, reason:dr.reason.trim(), note:dr.note.trim(), shared:false, at:Date.now()};
     await store.putUser(key, entry);
     S.user[key] = entry; dropDraft(o.dk); S.sel = null;
+    if (!o.edit) store.pick(o.date, p.id);
     if (isToday && !o.edit) setSharePref(dr.share);
     closeSheet();
     let warn = "";
@@ -654,6 +767,7 @@ function renderSheet(){
       h("div", {class:"stack"},
         h("div", {class:"original"}, p.text),
         h("div", {class:"source"}, src),
+        p.id ? h("div", null, h("button", {class:"btn small quiet", type:"button", onclick: () => openTypo(p.id, src)}, "오탈자 알리기")) : null,
         ctx.length ? h("details", null,
           h("summary", {class:"note"}, "앞뒤 원문 이어 보기"),
           h("div", {class:"ctx"}, ctx.map(x => h("div", {class:"scripture" + (x.id === p.id ? " here" : "")}, x.text)))) : null),
@@ -678,8 +792,297 @@ function renderSheet(){
   const t = box.querySelector("#s-reason"); if (t) t.focus({preventScroll:true});
 }
 
+/* ───── 작은 창 ───── */
+let modalEl = null;
+function closeModal(){ if (modalEl){ modalEl.remove(); modalEl = null; } }
+function modalMsg(t){ const m = modalEl && modalEl.querySelector(".modal-msg"); if (m) m.textContent = t; }
+function modal(title, kids){
+  closeModal();
+  const box = h("div", {class:"modal", role:"dialog", "aria-modal":"true", "aria-label":title,
+      onclick: ev => { if (ev.target === box) closeModal(); }, onkeydown: ev => { if (ev.key === "Escape") closeModal(); }},
+    h("div", {class:"modal-in card"},
+      h("div", {class:"row spread"}, h("strong", null, title), h("button", {class:"btn small", type:"button", onclick: closeModal}, "닫기")),
+      kids, h("p", {class:"note modal-msg", role:"status"})));
+  document.body.append(box); modalEl = box;
+  const f = box.querySelector("textarea, input, button"); if (f) f.focus({preventScroll:true});
+}
+
+/* ───── 글씨 크기 ───── */
+const FS = [1, 1.15, 1.3, 1.5];
+function setFs(i){
+  i = Math.max(0, Math.min(FS.length - 1, i | 0));
+  document.documentElement.style.setProperty("--fs", FS[i]);
+  try{ localStorage.setItem("beopmun.fs", String(i)); }catch(e){}
+  document.getElementById("fs-minus").disabled = i === 0;
+  document.getElementById("fs-plus").disabled = i === FS.length - 1;
+}
+function getFs(){ try{ return +localStorage.getItem("beopmun.fs") || 0; }catch(e){ return 0; } }
+document.getElementById("fs-minus").addEventListener("click", () => setFs(getFs() - 1));
+document.getElementById("fs-plus").addEventListener("click", () => setFs(getFs() + 1));
+setFs(getFs());
+
+/* ───── 설치 안내 · 앱 안내 ───── */
+const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+let installEvt = null;
+addEventListener("beforeinstallprompt", ev => { ev.preventDefault(); installEvt = ev; });
+function installBanner(){
+  let off = false; try{ off = localStorage.getItem("beopmun.install") === "0"; }catch(e){}
+  if (off || isStandalone()) return null;
+  return h("div", {class:"banner row spread"}, h("span", null, "홈 화면에 추가하면 앱처럼 바로 열 수 있습니다."),
+    h("span", {class:"row"}, h("button", {class:"btn small primary", type:"button", onclick: openInstall}, "설치 방법"),
+      h("button", {class:"btn small", type:"button", onclick: () => { try{ localStorage.setItem("beopmun.install", "0"); }catch(e){} render(); }}, "다음에")));
+}
+function openInstall(){
+  const ua = navigator.userAgent, ios = /iPhone|iPad|iPod/.test(ua), and = /Android/.test(ua);
+  const steps = ios ? ["Safari로 이 앱을 엽니다. 카카오톡 안에서 열렸다면 오른쪽 아래 단추를 눌러 'Safari로 열기'를 고릅니다.",
+      "화면 아래 가운데의 공유 단추(네모에서 화살표가 위로 나온 모양)를 누릅니다.", "목록을 아래로 내려 '홈 화면에 추가'를 누릅니다.", "오른쪽 위 '추가'를 누르면 홈 화면에 일원상 아이콘이 생깁니다."]
+    : and ? ["Chrome이나 삼성 인터넷으로 이 앱을 엽니다. 카카오톡 안에서 열렸다면 ⋮ 단추를 눌러 '다른 브라우저로 열기'를 고릅니다.",
+      "Chrome은 오른쪽 위 ⋮, 삼성 인터넷은 오른쪽 아래 ≡ 단추를 누릅니다.", "'홈 화면에 추가' 또는 '앱 설치'를 누릅니다.", "'추가'나 '설치'를 누르면 홈 화면에 일원상 아이콘이 생깁니다."]
+    : ["휴대폰에서 이 주소를 엽니다: " + location.origin + location.pathname, "아이폰: Safari의 공유 단추 → '홈 화면에 추가'", "갤럭시: Chrome·삼성 인터넷의 메뉴 → '홈 화면에 추가' 또는 '앱 설치'"];
+  modal("홈 화면에 설치하기", [
+    installEvt ? h("div", null, h("button", {class:"btn primary", type:"button", onclick: async () => { try{ installEvt.prompt(); await installEvt.userChoice; }catch(e){} installEvt = null; closeModal(); }}, "지금 설치")) : null,
+    h("ol", {class:"steps"}, steps.map(s => h("li", null, s)))]);
+}
+function openAbout(){
+  modal("앱 안내", [h("ul", {class:"steps"},
+    h("li", null, "법문은 정전과 대종경 원문입니다. 틀린 글자를 보시면 '오탈자 알리기'로 알려 주세요."),
+    h("li", null, "고른 법문과 적은 글은 이 폰에만 저장됩니다. '마음 돌아보기'에서 자동 백업을 켜면 암호로 잠겨 서버에도 보관됩니다."),
+    h("li", null, "'함께 읽기에 나누기'를 켠 글만 다른 사람에게 이름 없이 보이고, 관리자에게 이름 없이 모입니다."),
+    h("li", null, "어떤 법문이 많이 선택되는지 알기 위해, 고른 법문의 출처만 이름 없이 통계에 쓰입니다. 적은 글은 포함되지 않습니다."),
+    h("li", null, "로그인과 비용 없이 쓸 수 있습니다."))]);
+}
+document.getElementById("lnk-install").addEventListener("click", openInstall);
+document.getElementById("lnk-about").addEventListener("click", openAbout);
+
+/* ───── 오탈자 알리기 ───── */
+function openTypo(pid, source){
+  if (!store.canShare) return modal("오탈자 알리기", [h("p", null, "인터넷에 연결되어야 알릴 수 있습니다.")]);
+  const ta = h("textarea", {id:"typo-note", maxlength:"1000", placeholder:"예: 둘째 줄 '공부인'이 '공부안'으로 적혀 있습니다."});
+  modal("오탈자 알리기", [h("p", {class:"source"}, source),
+    h("label", {for:"typo-note"}, "어디가 어떻게 다른지 적어 주세요", ta),
+    h("div", {class:"row"}, h("button", {class:"btn primary", type:"button", onclick: async ev => {
+      const note = ta.value.trim(); if (!note) return ta.focus();
+      ev.target.disabled = true;
+      try{
+        await withTimeout(store.db.collection("typos").add({pid:clip(pid, 80), source:clip(source, 200), note:note.slice(0, 1000), at:Date.now()}));
+        modal("오탈자 알리기", [h("p", null, "알려 주셔서 고맙습니다. 관리자에게 전해졌습니다.")]);
+      }catch(e){ ev.target.disabled = false; modalMsg("보내지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요."); }
+    }}, "보내기"))]);
+}
+
+/* ───── 법문 카드 ───── */
+function wrapLines(g, text, maxW){
+  const lines = [];
+  text.split("\n").forEach(par => {
+    let line = "";
+    par.split(" ").forEach(w => {
+      const t = line ? line + " " + w : w;
+      if (g.measureText(t).width <= maxW){ line = t; return; }
+      if (line) lines.push(line);
+      if (g.measureText(w).width <= maxW){ line = w; return; }
+      let cur = ""; for (const ch of w){ if (g.measureText(cur + ch).width > maxW){ lines.push(cur); cur = ch; } else cur += ch; }
+      line = cur;
+    });
+    lines.push(line);
+  });
+  return lines;
+}
+async function drawCard(text, source){
+  const W = 1080, H = 1350, P = 110, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d"), F = '"Gowun Batang", "Noto Serif KR", "AppleMyungjo", serif';
+  try{ await Promise.all([document.fonts.load('40px "Gowun Batang"', text + source), document.fonts.load('700 40px "Gowun Batang"', "내 마음의 법문")]); }catch(e){}
+  g.fillStyle = "#f3f4ef"; g.fillRect(0, 0, W, H);
+  g.strokeStyle = "#a47c2a"; g.lineWidth = 7; g.beginPath(); g.arc(W / 2, 170, 62, 0, Math.PI * 2); g.stroke();
+  const top = 290, bottom = H - 230, maxW = W - 2 * P;
+  let lines = null, size = 0;
+  for (const s of [52, 46, 41, 36, 32, 28, 25]){
+    g.font = `${s}px ${F}`; const L = wrapLines(g, text, maxW);
+    if (L.length * s * 1.8 <= bottom - top){ lines = L; size = s; break; }
+  }
+  if (!lines) return null;
+  g.fillStyle = "#1b2a2a"; g.textBaseline = "middle"; g.font = `${size}px ${F}`;
+  const lh = size * 1.8, y0 = top + ((bottom - top) - lines.length * lh) / 2 + lh / 2;
+  lines.forEach((l, i) => g.fillText(l, P, y0 + i * lh));
+  g.fillStyle = "#5a6966"; g.font = `30px ${F}`; g.fillText(source, P, H - 170);
+  g.fillStyle = "#1f5c4d"; g.font = `700 30px ${F}`; g.fillText("내 마음의 법문", P, H - 112);
+  return c;
+}
+async function openCard(text, source){
+  modal("법문 카드", [h("p", {class:"note"}, "카드를 만들고 있습니다.")]);
+  const c = await drawCard(text, source);
+  if (!c) return modal("법문 카드", [h("p", null, "이 법문은 길어서 카드 한 장에 원문을 다 담을 수 없습니다.")]);
+  const blob = await new Promise(r => c.toBlob(r, "image/png"));
+  const url = URL.createObjectURL(blob), file = new File([blob], "법문카드.png", {type:"image/png"});
+  const share = !!(navigator.canShare && navigator.canShare({files:[file]}));
+  modal("법문 카드", [h("img", {src:url, class:"cardimg", alt:source + " 법문 카드"}),
+    h("div", {class:"row"},
+      share ? h("button", {class:"btn primary", type:"button", onclick: async () => { try{ await navigator.share({files:[file]}); }catch(e){} }}, "보내기") : null,
+      h("a", {class:"btn", href:url, download:"법문카드.png"}, "사진으로 저장")),
+    h("p", {class:"note"}, share ? "'보내기'를 누르면 카카오톡이나 문자로 보낼 수 있습니다." : "사진으로 저장한 뒤 카카오톡이나 문자에 붙여 보내세요.")]);
+}
+
+/* ───── 자동 백업 (암호로 잠가 서버에 보관) ───── */
+const enc = new TextEncoder();
+const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+const b64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+const sha = s => crypto.subtle.digest("SHA-256", enc.encode(s));
+const normCode = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const fmtCode = c => c.replace(/(.{4})(?=.)/g, "$1-");
+function newCode(){ const al = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r = crypto.getRandomValues(new Uint8Array(16)); return fmtCode([...r].map(x => al[x % 32]).join("")); }
+function bk(){ try{ const b = JSON.parse(localStorage.getItem("beopmun.backup") || "{}"); return b && typeof b === "object" ? b : {}; }catch(e){ return {}; } }
+function setBk(b){ try{ localStorage.setItem("beopmun.backup", JSON.stringify(b)); }catch(e){} }
+async function bkKeys(code){
+  const c = normCode(code);
+  return {id:hex(await sha("id:" + c)).slice(0, 40), wkey:hex(await sha("w:" + c)),
+    key:await crypto.subtle.importKey("raw", await sha("k:" + c), "AES-GCM", false, ["encrypt", "decrypt"])};
+}
+async function doBackup(){
+  const B = bk(); if (!B.code || !store.canShare) return;
+  const K = await bkKeys(B.code), entries = {};
+  Object.keys(S.user).forEach(k => {
+    if (!k.startsWith("j-")) return;
+    const e = S.user[k];
+    entries[k.slice(2)] = Object.assign({pid:e.pid, reason:e.reason || "", note:e.note || "", at:e.at || 0}, byId(e.pid) ? {} : {text:e.text, source:e.source});
+  });
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:"AES-GCM", iv}, K.key, enc.encode(JSON.stringify({v:1, entries, quiz:S.user.quiz || null})));
+  await withTimeout(store.db.collection("backups").doc(K.id).set({wkey:K.wkey, iv:b64(iv), blob:b64(new Uint8Array(ct)), updatedAt:Date.now()}));
+  setBk({code:B.code, last:Date.now()});
+}
+let bkTimer = null;
+function scheduleBackup(){
+  if (!bk().code) return;
+  clearTimeout(bkTimer);
+  bkTimer = setTimeout(() => { doBackup().then(() => { if (S.ready && currentView() === "journal" && !S.sheet) render(); }).catch(() => {}); }, 3000);
+}
+async function restoreBackup(raw){
+  const code = normCode(raw);
+  if (code.length !== 16){ S.warn = "백업 코드는 글자와 숫자 16자입니다. 다시 확인해 주세요."; return; }
+  const K = await bkKeys(code), snap = await withTimeout(store.db.collection("backups").doc(K.id).get());
+  if (!snap.exists){ S.warn = "이 코드로 보관된 기록을 찾지 못했습니다."; return; }
+  const d = snap.data(); let data;
+  try{ data = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM", iv:unb64(d.iv)}, K.key, unb64(d.blob)))); }
+  catch(e){ S.warn = "보관된 기록을 열지 못했습니다. 코드를 다시 확인해 주세요."; return; }
+  let n = 0;
+  Object.keys(data.entries || {}).forEach(date => {
+    const k = "j-" + date, v = data.entries[date];
+    if (S.user[k] || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !v) return;
+    const p = byId(v.pid);
+    const e = {date, pid:v.pid, text:p ? p.text : v.text, source:p ? sourceLabel(p) : v.source, reason:v.reason || "", note:v.note || "", shared:false, at:v.at || 0};
+    if (typeof e.text !== "string") return;
+    S.user[k] = e; store.mem.user[k] = e; n++;
+  });
+  if (!S.user.quiz && data.quiz){ S.user.quiz = data.quiz; store.mem.user.quiz = data.quiz; }
+  store.writeLocal(); setBk({code:fmtCode(code), last:0});
+  await doBackup();
+  S.okmsg = `기록 ${n}일을 되찾았습니다. 이 폰에서도 같은 코드로 자동 백업됩니다.`;
+}
+
+/* ───── 관리자 ───── */
+const A = {state:"idle", user:null, data:null, bound:false, app:null};
+function adminApp(){ if (!A.app) A.app = firebase.apps.find(a => a.name === "admin") || firebase.initializeApp(window.BEOPMUN_FIREBASE, "admin"); return A.app; }
+function bindAdmin(){
+  if (A.bound) return; A.bound = true;
+  firebase.auth(adminApp()).onAuthStateChanged(u => {
+    A.user = u;
+    if (u) loadAdmin(); else { A.state = "idle"; A.data = null; if (currentView() === "admin") render(); }
+  });
+}
+async function loadAdmin(){
+  A.state = "loading"; if (currentView() === "admin") render();
+  const adb = firebase.firestore(adminApp()), cut = dayKey(new Date(Date.now() - 60 * 864e5));
+  try{
+    const [feed, reports, typos, picks, hidden, likes] = await withTimeout(Promise.all([
+      adb.collection("feed").orderBy("date", "desc").limit(1000).get(),
+      adb.collection("reports").limit(500).get(), adb.collection("typos").limit(500).get(),
+      adb.collection("picks").where("date", ">=", cut).get(), adb.collection("hidden").get(),
+      adb.collection("likes").where("date", ">=", cut).get()]), 20000);
+    const rows = s => s.docs.map(d => Object.assign({id:d.id}, d.data()));
+    A.data = {feed:rows(feed), reports:rows(reports), typos:rows(typos), picks:rows(picks), hidden:new Set(hidden.docs.map(d => d.id)), likes:rows(likes)};
+    A.state = "ready";
+  }catch(e){ A.state = e && e.code === "permission-denied" ? "denied" : "error"; }
+  if (currentView() === "admin") render();
+}
+function topN(counts, n){ return Object.keys(counts).map(k => [k, counts[k]]).sort((a, b) => b[1] - a[1]).slice(0, n); }
+function viewAdmin(){
+  const out = [h("h2", null, "관리자")];
+  if (!store.db) return out.concat(h("p", {class:"lead"}, S.feed.state === "loading" ? "서버에 연결하고 있습니다." : "서버에 연결된 뒤에 쓸 수 있습니다. 인터넷 연결을 확인하고 다시 열어 주세요."));
+  bindAdmin();
+  const auth = firebase.auth(adminApp());
+  if (!A.user) return out.concat(h("p", {class:"lead"}, "관리자 구글 계정으로 로그인하면 통계, 신고, 오탈자, 함께 읽기 모음을 볼 수 있습니다."),
+    h("div", null, h("button", {class:"btn primary", type:"button", onclick: () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
+      .catch(e => say(e && e.code === "auth/popup-blocked" ? "로그인 창이 막혔습니다. 브라우저에서 팝업을 허용해 주세요." : "로그인하지 못했습니다. Chrome이나 Safari에서 이 주소를 열어 다시 해 주세요.", true))}, "구글 계정으로 로그인")));
+  out.push(h("div", {class:"row spread"}, h("span", {class:"note"}, A.user.email || ""),
+    h("span", {class:"row"}, h("button", {class:"btn small", type:"button", onclick: loadAdmin}, "새로 고침"),
+      h("button", {class:"btn small", type:"button", onclick: () => auth.signOut()}, "로그아웃"))));
+  if (A.state === "loading") return out.concat(h("p", {class:"lead"}, "자료를 불러오고 있습니다."));
+  if (A.state === "denied") return out.concat(h("p", {class:"lead"}, "이 계정은 관리자로 등록되어 있지 않습니다."));
+  if (A.state !== "ready") return out.concat(h("p", {class:"lead"}, "자료를 불러오지 못했습니다. '새로 고침'을 눌러 주세요."));
+  const D = A.data, adb = firebase.firestore(adminApp());
+  const run = fn => act(async () => { await fn(); await loadAdmin(); });
+  const hideBtn = (id, date) => D.hidden.has(id)
+    ? h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => run(() => adb.collection("hidden").doc(id).delete())}, "다시 보이기")
+    : h("button", {class:"btn small danger", type:"button", disabled:S.busy, onclick: () => run(() => adb.collection("hidden").doc(id).set({date:date || "", at:Date.now()}))}, "숨기기");
+  const post = x => [h("div", {class:"scripture"}, clip(x.text, 4000)), h("div", {class:"source"}, clip(x.source, 200)),
+    x.reason ? h("div", {class:"reason"}, clip(x.reason, 2000)) : null, x.note ? h("div", {class:"reason"}, clip(x.note, 6000)) : null];
+
+  // 인사이트 (최근 30일)
+  const days = Array.from({length:30}, (_, i) => dayKey(new Date(Date.now() - (29 - i) * 864e5))), from = days[0];
+  const p30 = D.picks.filter(p => p.date >= from), perDay = Object.create(null), byPid = Object.create(null), byPart = Object.create(null);
+  p30.forEach(p => { perDay[p.date] = (perDay[p.date] || 0) + 1; if (typeof p.pid !== "string") return; byPid[p.pid] = (byPid[p.pid] || 0) + 1;
+    const q = byId(p.pid); if (q){ const k = q.book + " " + q.part; byPart[k] = (byPart[k] || 0) + 1; } });
+  const max = Math.max(1, ...days.map(d => perDay[d] || 0));
+  const tile = (n, label) => h("div", {class:"tile"}, h("strong", null, n), h("span", null, label));
+  out.push(h("h3", {class:"sec"}, "인사이트 · 최근 30일"),
+    h("div", {class:"tiles"}, tile(p30.length, "법문을 고른 횟수"), tile(new Set(p30.map(p => p.id.split("_")[0])).size, "쓴 기기 수"),
+      tile(D.feed.filter(f => f.date >= from).length, "함께 읽기 글"), tile(D.likes.filter(l => l.date >= from).length, "합장")),
+    h("div", {class:"card"}, h("div", {class:"note"}, `날마다 법문을 고른 횟수 (가장 많은 날 ${max}회)`),
+      h("div", {class:"bars", role:"img", "aria-label":"최근 30일 동안 날마다 법문을 고른 횟수"}, days.map(d => h("i", {style:`height:${Math.round((perDay[d] || 0) / max * 100)}%`, title:`${d}: ${perDay[d] || 0}회`}))),
+      h("div", {class:"row spread note"}, h("span", null, days[0].slice(5)), h("span", null, days[29].slice(5)))),
+    h("div", {class:"card"}, h("strong", null, "많이 고른 법문"),
+      topN(byPid, 10).length ? h("ol", {class:"steps"}, topN(byPid, 10).map(([pid, n]) => { const q = byId(pid); return h("li", null, `${q ? sourceLabel(q) : pid} · ${n}회`); })) : h("p", {class:"note"}, "아직 자료가 없습니다.")),
+    h("div", {class:"card"}, h("strong", null, "많이 고른 품·편"),
+      topN(byPart, 8).length ? h("ol", {class:"steps"}, topN(byPart, 8).map(([k, n]) => h("li", null, `${k} · ${n}회`))) : h("p", {class:"note"}, "아직 자료가 없습니다.")));
+
+  // 신고
+  const byFeed = Object.create(null); D.reports.forEach(r => { (byFeed[r.feedId] = byFeed[r.feedId] || []).push(r); });
+  out.push(h("h3", {class:"sec"}, `신고 ${Object.keys(byFeed).length}건`));
+  if (!D.reports.length) out.push(h("p", {class:"note"}, "신고된 글이 없습니다."));
+  Object.keys(byFeed).forEach(fid => {
+    const rs = byFeed[fid], x = D.feed.find(f => f.id === fid);
+    out.push(h("article", {class:"card"}, h("div", {class:"row spread"}, h("span", {class:"when"}, (x && x.date) || rs[0].date || ""), h("span", {class:"pill"}, `신고 ${rs.length}명`)),
+      x ? post(x) : h("p", {class:"note"}, "글쓴이가 이미 내린 글입니다."),
+      rs.filter(r => r.why).map(r => h("p", {class:"note"}, "까닭: " + clip(r.why, 200))),
+      h("div", {class:"row"}, x ? hideBtn(fid, x.date) : null,
+        h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => run(() => Promise.all(rs.map(r => adb.collection("reports").doc(r.id).delete())))}, "신고 정리"))));
+  });
+
+  // 오탈자
+  out.push(h("h3", {class:"sec"}, `오탈자 알림 ${D.typos.length}건`));
+  if (!D.typos.length) out.push(h("p", {class:"note"}, "들어온 알림이 없습니다."));
+  D.typos.slice().sort((a, b) => (b.at || 0) - (a.at || 0)).forEach(t => out.push(h("article", {class:"card"},
+    h("div", {class:"source"}, clip(t.source, 200)), h("div", {class:"reason"}, clip(t.note, 1000)),
+    h("div", {class:"row"}, h("span", {class:"when"}, t.at ? dayKey(new Date(t.at)) : ""),
+      h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => run(() => adb.collection("typos").doc(t.id).delete())}, "처리 완료")))));
+
+  // 함께 읽기 모음
+  out.push(h("h3", {class:"sec"}, `함께 읽기 모음 ${D.feed.length}건`),
+    h("div", {class:"row"}, h("button", {class:"btn small", type:"button", onclick: () => {
+      const rows = D.feed.map(f => ({날짜:f.date, 출처:f.source, 법문:f.text, 와닿은이유:f.reason, 감상:f.note, 가림:D.hidden.has(f.id)}));
+      const url = URL.createObjectURL(new Blob([JSON.stringify(rows, null, 1)], {type:"application/json"}));
+      const a = h("a", {href:url, download:`함께읽기-${dayKey()}.json`}); document.body.append(a); a.click(); a.remove();
+    }}, "모두 내려받기"),
+    h("a", {class:"btn small", href:"https://console.firebase.google.com/project/" + window.BEOPMUN_FIREBASE.projectId + "/usage"}, "Firebase 사용량 보기")));
+  D.feed.slice(0, A.more ? 1000 : 30).forEach(x => out.push(h("article", {class:"card"},
+    h("div", {class:"row spread"}, h("span", {class:"when"}, x.date || ""), D.hidden.has(x.id) ? h("span", {class:"pill"}, "가린 글") : null),
+    post(x), h("div", {class:"row"}, hideBtn(x.id, x.date)))));
+  if (D.feed.length > 30 && !A.more) out.push(h("div", null, h("button", {class:"btn", type:"button", onclick: () => { A.more = true; render(); }}, "더 보기")));
+  return out;
+}
+
 /* ───── 그리기와 시작 ───── */
-const VIEWS = {today:viewToday, together:viewTogether, journal:viewJournal, quiz:viewQuiz, library:viewLibrary};
+const VIEWS = {today:viewToday, together:viewTogether, journal:viewJournal, quiz:viewQuiz, library:viewLibrary, admin:viewAdmin};
 function currentView(){ const v = location.hash.slice(1); return VIEWS[v] ? v : "today"; }
 function render(){
   const v = currentView();
@@ -688,7 +1091,7 @@ function render(){
   const kids = VIEWS[v]();
   main.replaceChildren(...(Array.isArray(kids) ? kids : [kids]).filter(Boolean));
 }
-addEventListener("hashchange", async () => { if (S.sheet) closeSheet(true); S.confirmFeed = null; S.editing = null; S.confirmDel = null; say(""); if (currentView() === "today") await ensureDraw(); render(); });
+addEventListener("hashchange", async () => { closeModal(); if (S.sheet) closeSheet(true); S.confirmFeed = null; S.editing = null; S.confirmDel = null; say(""); if (currentView() === "today") await ensureDraw(); render(); });
 document.getElementById("date").textContent = dayText(dayKey());
 render();
 (async function start(){
@@ -702,7 +1105,8 @@ render();
   S.ready = true;
   shownDay = dayKey();
   S.feed.state = "loading";
-  store.init().then(() => { startFeed(); render(); });
+  store.init().then(() => { startFeed(); render(); if (bk().code && (Date.now() - (bk().last || 0) > 864e5)) scheduleBackup();
+    const t = S.user["j-" + dayKey()]; if (t) store.pick(t.date, t.pid); });
   await ensureDraw();
   render();
 })();

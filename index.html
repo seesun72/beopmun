@@ -81,6 +81,9 @@ textarea,select,input{font:inherit;color:var(--ink);background:var(--bg);border:
 textarea{min-height:96px;resize:vertical;line-height:1.7}
 .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .note{font-size:.88rem;color:var(--muted)}
+.daynav{display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.daynav strong{font-weight:600}
+.daynav .row{width:100%}
 .banner{border-left:3px solid var(--ring);padding:8px 12px;background:var(--surface);font-size:.9rem}
 .banner.err{border-left-color:var(--bad)}
 .entry .when{font-variant-numeric:tabular-nums;font-size:.85rem;color:var(--muted)}
@@ -482,8 +485,20 @@ function autoBackupCard(){
 function viewJournal(){
   const keys = Object.keys(S.user).filter(k => k.startsWith("j-")).map(k => k.slice(2)).sort().reverse();
   const C = S.cal, mk = `${C.y}-${pad(C.m + 1)}`, inMonth = keys.filter(k => k.startsWith(mk));
+  const shared = keys.filter(k => S.user["j-" + k].shared);
+  const tabs = h("div", {class:"row", role:"group", "aria-label":"보기"},
+    h("button", {class:"btn small" + (S.jf !== "shared" ? " primary" : ""), type:"button", "aria-pressed":String(S.jf !== "shared"), onclick: () => { S.jf = "all"; render(); }}, "달력으로 보기"),
+    h("button", {class:"btn small" + (S.jf === "shared" ? " primary" : ""), type:"button", "aria-pressed":String(S.jf === "shared"), onclick: () => { S.jf = "shared"; render(); }}, `함께 나눈 글 ${shared.length}`));
+  if (S.jf === "shared"){
+    const o = [h("div", {class:"row spread"}, h("h2", null, "마음 돌아보기"), h("span", {class:"tally"}, `함께 나눈 글 ${shared.length}편`)), tabs];
+    if (!shared.length) o.push(h("p", {class:"lead"}, "아직 함께 읽기에 나눈 글이 없습니다."));
+    else o.push(h("p", {class:"note"}, "이 폰에서 함께 읽기에 나눈 글을 모두 모았습니다. 그날의 함께 읽기도 열어 볼 수 있습니다."));
+    shared.forEach(k => o.push(entryCard(k, S.user["j-" + k], k === dayKey()),
+      k < FEED_FIRST ? null : h("div", null, h("a", {class:"btn small quiet", href:"#together", onclick: () => { S.feedDay = k === dayKey() ? null : k; startFeed(); }}, "그날의 함께 읽기 보기"))));
+    return o;
+  }
   const out = [h("div", {class:"row spread"}, h("h2", null, "마음 돌아보기"), h("span", {class:"tally"}, `모두 ${keys.length}일 · 이 달 ${inMonth.length}일`)),
-    calendar(new Set(inMonth))];
+    tabs, calendar(new Set(inMonth))];
   if (!keys.length) out.push(h("p", {class:"lead"}, "아직 간직한 법문이 없습니다. 오늘의 법문에서 한 구절을 골라 보세요."),
     h("div", null, h("a", {class:"btn", href:"#today"}, "오늘의 법문으로")));
   else if (!inMonth.length) out.push(h("p", {class:"lead"}, "이 달에는 간직한 법문이 없습니다."));
@@ -594,8 +609,16 @@ function feedDoc(e){
   return {date:e.date, pid:clip(e.pid, 80), text:clip(e.text, 4000), source:clip(e.source, 200),
     reason:clip(e.reason, 2000), note:clip(e.note, 6000), at:e.at || Date.now(), updatedAt:Date.now()};
 }
+const FEED_FIRST = "2026-11-15";
+function shiftDay(key, n){ const [y, m, d] = key.split("-").map(Number); return dayKey(new Date(y, m - 1, d + n)); }
+function feedGo(key){
+  const today = dayKey();
+  if (!key || key >= today) key = null; else if (key < FEED_FIRST) key = FEED_FIRST;
+  S.feedDay = key; startFeed(); render(); scrollTo(0, 0);
+}
 function startFeed(){
-  const F = S.feed, date = dayKey();
+  if (S.feedDay && S.feedDay >= dayKey()) S.feedDay = null;
+  const F = S.feed, date = S.feedDay || dayKey();
   ["unsub", "unsub2", "unsub3"].forEach(k => { if (F[k]){ try{ F[k](); }catch(e){} F[k] = null; } });
   F.likes = Object.create(null); F.myLikes = new Set(); F.hidden = new Set();
   clearTimeout(F.timer);
@@ -627,7 +650,7 @@ async function checkNewDay(){
   if (S.sheet && !S.sheet.edit && S.sheet.date !== k) closeSheet();
   if (S.quiz && S.quiz.chosen != null) S.quiz = null;
   await ensureDraw();
-  if (store.db) startFeed();
+  if (store.db && !S.feedDay) startFeed();
   render();
 }
 setInterval(checkNewDay, 30000);
@@ -656,18 +679,27 @@ function openReport(x){
     }}, "신고하기"))]);
 }
 function viewTogether(){
-  const F = S.feed, myId = store.uid ? store.feedId(F.date || dayKey()) : null;
+  const F = S.feed, day = F.date || dayKey(), isToday = day === dayKey(), myId = store.uid ? store.feedId(day) : null;
   const items = F.items.filter(x => !F.hidden.has(x.id) || x.id === myId);
   const live = F.state === "live" || F.state === "cached";
-  const out = [h("div", {class:"row spread"}, h("h2", null, "오늘 함께 고른 법문"),
-    h("span", {class:"live" + (live ? "" : " off")}, h("i"), live ? "실시간" : F.state === "loading" ? "불러오는 중" : "연결 안 됨"))];
+  const out = [h("div", {class:"row spread"}, h("h2", null, isToday ? "오늘 함께 고른 법문" : "그날 함께 고른 법문"),
+    h("span", {class:"live" + (live ? "" : " off")}, h("i"), live ? (isToday ? "실시간" : "지난 날") : F.state === "loading" ? "불러오는 중" : "연결 안 됨")),
+    h("div", {class:"daynav"},
+      h("strong", null, dayText(day)),
+      h("div", {class:"row spread"},
+        h("button", {class:"btn small", type:"button", disabled:day <= FEED_FIRST, onclick: () => feedGo(shiftDay(day, -1))}, "◀ 전날"),
+        h("button", {class:"btn small" + (isToday ? "" : " primary"), type:"button", disabled:isToday, onclick: () => feedGo(null)}, "오늘"),
+        h("button", {class:"btn small", type:"button", disabled:isToday, onclick: () => feedGo(shiftDay(day, 1))}, "다음날 ▶")))];
   if (F.state === "off") return out.concat(h("p", {class:"lead"}, navigator.onLine === false ? "인터넷에 연결되면 오늘 다른 사람들이 나눈 법문을 볼 수 있습니다." : "함께 읽기 서버에 연결하지 못했습니다. 오늘의 법문과 마음 돌아보기는 그대로 쓸 수 있습니다."));
   if (F.state === "error") return out.concat(h("p", {class:"lead"}, "나눈 글을 불러오지 못했습니다. 화면을 다시 열어 주세요."));
   if (F.state === "slow" && !items.length) return out.concat(h("p", {class:"lead"}, "나눈 글에 아직 닿지 못했습니다. 연결이 되면 저절로 나타납니다."));
-  out.push(h("p", {class:"lead"}, items.length ? `오늘 ${items.length}명이 이름 없이 법문을 나누었습니다. 새 글은 저절로 나타납니다.` : "오늘은 아직 나눈 글이 없습니다. 첫 법문을 나누어 보세요."));
+  out.push(h("p", {class:"lead"}, isToday
+    ? (items.length ? `오늘 ${items.length}명이 이름 없이 법문을 나누었습니다. 새 글은 저절로 나타납니다.` : "오늘은 아직 나눈 글이 없습니다. 첫 법문을 나누어 보세요.")
+    : (items.length ? `이 날 ${items.length}명이 이름 없이 법문을 나누었습니다.` : "이 날은 나눈 글이 없습니다.")));
   const count = Object.create(null); items.forEach(x => { if (typeof x.pid === "string" && x.pid) count[x.pid] = (count[x.pid] || 0) + 1; });
   const mine = S.user["j-" + dayKey()];
-  if (!store.canShare) out.push(h("p", {class:"note"}, "지금은 함께 읽기에 글을 나눌 수 없습니다. 내가 고른 법문은 이 폰에만 남습니다."));
+  if (!isToday){}
+  else if (!store.canShare) out.push(h("p", {class:"note"}, "지금은 함께 읽기에 글을 나눌 수 없습니다. 내가 고른 법문은 이 폰에만 남습니다."));
   else if (!mine) out.push(h("div", null, h("a", {class:"btn primary", href:"#today"}, "오늘의 법문 고르러 가기")));
   else if (!mine.shared) out.push(h("p", {class:"note"}, "내가 오늘 고른 법문은 아직 나누지 않았습니다. 오늘의 법문 화면에서 나눌 수 있습니다."));
   const rep = reported();

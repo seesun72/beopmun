@@ -384,9 +384,9 @@ function entryCard(key, e, isToday){
     h("div", {class:"source"}, e.source)
   ];
   {
-    if (e.reason) kids.push(h("h3", null, "와닿은 이유"), h("div", {class:"reason"}, e.reason));
-    if (e.note) kids.push(h("h3", null, "나의 감상 · 나만의 해석"), h("div", {class:"reason"}, e.note));
-    if (!e.reason && !e.note) kids.push(h("div", {class:"note"}, "적어 둔 마음이 없습니다."));
+    const memo = joinNote(e.reason, e.note);
+    if (memo) kids.push(h("h3", null, "나의 감상"), h("div", {class:"reason"}, memo));
+    else kids.push(h("div", {class:"note"}, "적어 둔 마음이 없습니다."));
     const tools = [h("button", {class:"btn small", type:"button", onclick: () => { S.confirmDel = null; openSheet({pid:e.pid, date:key, edit:true}); }}, "원문 펼쳐 고쳐 적기"),
       h("button", {class:"btn small", type:"button", onclick: () => openCard(e.text, e.source)}, "법문 카드")];
     if (isToday && store.canShare && !e.shared) tools.push(h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(async () => {
@@ -683,8 +683,7 @@ function viewTogether(){
       isMine && F.hidden.has(x.id) ? h("p", {class:"note"}, "관리자가 가린 글입니다. 다른 사람에게는 보이지 않습니다.") : null,
       h("div", {class:"scripture"}, clip(x.text, 4000)),
       h("div", {class:"source"}, clip(x.source, 200)),
-      x.reason ? [h("h3", null, "와닿은 이유"), h("div", {class:"reason"}, clip(x.reason, 2000))] : null,
-      x.note ? [h("h3", null, "감상 · 해석"), h("div", {class:"reason"}, clip(x.note, 6000))] : null,
+      joinNote(x.reason, x.note) ? [h("h3", null, "감상"), h("div", {class:"reason"}, clip(joinNote(x.reason, x.note), 8000))] : null,
       tools.length ? h("div", {class:"row"}, tools) : null));
   });
   return out;
@@ -713,7 +712,8 @@ function openSheet(o){
   const p = byId(o.pid) || (e ? {id:o.pid, text:e.text, _source:e.source} : null);
   if (!p) return;
   const dk = o.edit ? "edit:" + o.date : o.pid;
-  if (!S.drafts[dk]) S.drafts[dk] = o.edit && e ? {reason:e.reason || "", note:e.note || "", share:!!e.shared} : {reason:"", note:"", share:sharePref()};
+  if (!S.drafts[dk]) S.drafts[dk] = o.edit && e ? {reason:"", note:joinNote(e.reason, e.note), share:!!e.shared} : {reason:"", note:"", share:sharePref()};
+  { const d = S.drafts[dk]; if (d.reason){ d.note = joinNote(d.reason, d.note); d.reason = ""; } }
   const wasOpen = !!S.sheet;
   S.sheet = {...o, dk};
   if (!wasOpen) sheetReturn = document.activeElement;
@@ -740,8 +740,8 @@ function renderSheet(){
     const key = "j-" + o.date;
     const was = !!(e && e.shared), want = isToday && store.canShare && (dr.share || (o.edit && was));
     const entry = o.edit && e
-      ? {...e, reason:dr.reason.trim(), note:dr.note.trim(), shared:was, updatedAt:Date.now()}
-      : {date:o.date, pid:p.id, text:p.text, source:src, reason:dr.reason.trim(), note:dr.note.trim(), shared:false, at:Date.now()};
+      ? {...e, reason:"", note:dr.note.trim(), shared:was, updatedAt:Date.now()}
+      : {date:o.date, pid:p.id, text:p.text, source:src, reason:"", note:dr.note.trim(), shared:false, at:Date.now()};
     await store.putUser(key, entry);
     S.user[key] = entry; dropDraft(o.dk); S.sel = null;
     if (!o.edit) store.pick(o.date, p.id);
@@ -772,11 +772,8 @@ function renderSheet(){
           h("summary", {class:"note"}, "앞뒤 원문 이어 보기"),
           h("div", {class:"ctx"}, ctx.map(x => h("div", {class:"scripture" + (x.id === p.id ? " here" : "")}, x.text)))) : null),
       h("div", {class:"stack"},
-        h("label", {for:"s-reason", class:"label-strong"}, "왜 이 법문이 와닿았나요?"),
-        h("textarea", {id:"s-reason", placeholder:"오늘의 마음을 한두 줄로 적어 주세요.", value:dr.reason, oninput: ev => { dr.reason = ev.target.value; keepDrafts(); }})),
-      h("div", {class:"stack"},
-        h("label", {for:"s-note", class:"label-strong"}, "나의 감상 · 나만의 해석"),
-        h("textarea", {id:"s-note", class:"long", placeholder:"이 법문을 읽고 떠오른 생각, 내 삶에 비추어 본 뜻을 자유롭게 적어 보세요.", value:dr.note, oninput: ev => { dr.note = ev.target.value; keepDrafts(); }})),
+        h("label", {for:"s-note", class:"label-strong"}, "내 마음의 법문에 대한 감상을 적어주세요."),
+        h("textarea", {id:"s-note", class:"long", placeholder:"왜 이 법문이 와닿았는지, 읽고 떠오른 생각이나 내 삶에 비추어 본 뜻을 자유롭게 적어 보세요.", value:dr.note, oninput: ev => { dr.note = ev.target.value; keepDrafts(); }})),
       isToday && store.canShare && !(o.edit && e && e.shared) ? h("label", {class:"check", for:"s-share"},
         h("input", {id:"s-share", type:"checkbox", checked:dr.share ? "checked" : null, onchange: ev => dr.share = ev.target.checked}),
         h("span", null, "이름 없이 '함께 읽기'에 나누기", h("br"), h("span", {class:"note"}, "법문과 적은 글이 오늘 이 앱을 쓰는 다른 사람에게 이름 없이 보입니다. 한 번 나눈 글은 거둘 수 없습니다."))) : null,
@@ -789,8 +786,11 @@ function renderSheet(){
   sheetEl = box;
   if (!document.body.contains(box)) document.body.append(box);
   box.scrollTop = 0;
-  const t = box.querySelector("#s-reason"); if (t) t.focus({preventScroll:true});
+  const t = box.querySelector("#s-note"); if (t) t.focus({preventScroll:true});
 }
+
+/* 예전 기록의 '와닿은 이유'와 '감상'을 한 글로 잇기 */
+function joinNote(a, b){ return [a, b].map(x => (x || "").trim()).filter(Boolean).join("\n\n"); }
 
 /* ───── 작은 창 ───── */
 let modalEl = null;
@@ -1043,7 +1043,7 @@ function viewAdmin(){
     ? h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => run(() => adb.collection("hidden").doc(id).delete())}, "다시 보이기")
     : h("button", {class:"btn small danger", type:"button", disabled:S.busy, onclick: () => run(() => adb.collection("hidden").doc(id).set({date:date || "", at:Date.now()}))}, "숨기기");
   const post = x => [h("div", {class:"scripture"}, clip(x.text, 4000)), h("div", {class:"source"}, clip(x.source, 200)),
-    x.reason ? h("div", {class:"reason"}, clip(x.reason, 2000)) : null, x.note ? h("div", {class:"reason"}, clip(x.note, 6000)) : null];
+    joinNote(x.reason, x.note) ? h("div", {class:"reason"}, clip(joinNote(x.reason, x.note), 8000)) : null];
 
   // 인사이트 (최근 30일)
   const days = Array.from({length:30}, (_, i) => dayKey(new Date(Date.now() - (29 - i) * 864e5))), from = days[0];
@@ -1087,7 +1087,7 @@ function viewAdmin(){
   // 함께 읽기 모음
   out.push(h("h3", {class:"sec"}, `함께 읽기 모음 ${D.feed.length}건`),
     h("div", {class:"row"}, h("button", {class:"btn small", type:"button", onclick: () => {
-      const rows = D.feed.map(f => ({날짜:f.date, 출처:f.source, 법문:f.text, 와닿은이유:f.reason, 감상:f.note, 가림:D.hidden.has(f.id)}));
+      const rows = D.feed.map(f => ({날짜:f.date, 출처:f.source, 법문:f.text, 감상:joinNote(f.reason, f.note), 가림:D.hidden.has(f.id)}));
       const url = URL.createObjectURL(new Blob([JSON.stringify(rows, null, 1)], {type:"application/json"}));
       const a = h("a", {href:url, download:`함께읽기-${dayKey()}.json`}); document.body.append(a); a.click(); a.remove();
     }}, "모두 내려받기"),

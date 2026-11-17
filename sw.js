@@ -1,6 +1,6 @@
 // 내 마음의 법문 — 오프라인에서도 열리도록 앱 파일을 폰에 보관합니다.
 // 화면(index.html)은 인터넷이 되면 늘 새로 받아 업데이트가 바로 반영되고, 안 되면 보관본으로 엽니다.
-const VERSION = "beopmun-2026-11-18-1";
+const VERSION = "beopmun-2026-11-18-2";
 const SHELL = ["./", "index.html", "jeongjeon.js", "daejonggyeong.js", "config.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 const fresh = url => fetch(new Request(url, {cache:"no-cache", credentials:"same-origin"}));

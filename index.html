@@ -81,9 +81,7 @@ textarea,select,input{font:inherit;color:var(--ink);background:var(--bg);border:
 textarea{min-height:96px;resize:vertical;line-height:1.7}
 .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .note{font-size:.88rem;color:var(--muted)}
-.daynav{display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.daynav strong{font-weight:600}
-.daynav .row{width:100%}
+.more{display:flex;justify-content:center;padding:8px 0 24px}
 .banner{border-left:3px solid var(--ring);padding:8px 12px;background:var(--surface);font-size:.9rem}
 .banner.err{border-left-color:var(--bad)}
 .entry .when{font-variant-numeric:tabular-nums;font-size:.85rem;color:var(--muted)}
@@ -492,9 +490,8 @@ function viewJournal(){
   if (S.jf === "shared"){
     const o = [h("div", {class:"row spread"}, h("h2", null, "마음 돌아보기"), h("span", {class:"tally"}, `함께 나눈 글 ${shared.length}편`)), tabs];
     if (!shared.length) o.push(h("p", {class:"lead"}, "아직 함께 읽기에 나눈 글이 없습니다."));
-    else o.push(h("p", {class:"note"}, "이 폰에서 함께 읽기에 나눈 글을 모두 모았습니다. 그날의 함께 읽기도 열어 볼 수 있습니다."));
-    shared.forEach(k => o.push(entryCard(k, S.user["j-" + k], k === dayKey()),
-      k < FEED_FIRST ? null : h("div", null, h("a", {class:"btn small quiet", href:"#together", onclick: () => { S.feedDay = k === dayKey() ? null : k; startFeed(); }}, "그날의 함께 읽기 보기"))));
+    else o.push(h("p", {class:"note"}, "이 폰에서 함께 읽기에 나눈 글을 모두 모았습니다."));
+    shared.forEach(k => o.push(entryCard(k, S.user["j-" + k], k === dayKey())));
     return o;
   }
   const out = [h("div", {class:"row spread"}, h("h2", null, "마음 돌아보기"), h("span", {class:"tally"}, `모두 ${keys.length}일 · 이 달 ${inMonth.length}일`)),
@@ -609,18 +606,11 @@ function feedDoc(e){
   return {date:e.date, pid:clip(e.pid, 80), text:clip(e.text, 4000), source:clip(e.source, 200),
     reason:clip(e.reason, 2000), note:clip(e.note, 6000), at:e.at || Date.now(), updatedAt:Date.now()};
 }
-const FEED_FIRST = "2026-11-15";
-function shiftDay(key, n){ const [y, m, d] = key.split("-").map(Number); return dayKey(new Date(y, m - 1, d + n)); }
-function feedGo(key){
-  const today = dayKey();
-  if (!key || key >= today) key = null; else if (key < FEED_FIRST) key = FEED_FIRST;
-  S.feedDay = key; startFeed(); render(); scrollTo(0, 0);
-}
 function startFeed(){
-  if (S.feedDay && S.feedDay >= dayKey()) S.feedDay = null;
-  const F = S.feed, date = S.feedDay || dayKey();
+  const F = S.feed, date = dayKey();
   ["unsub", "unsub2", "unsub3"].forEach(k => { if (F[k]){ try{ F[k](); }catch(e){} F[k] = null; } });
   F.likes = Object.create(null); F.myLikes = new Set(); F.hidden = new Set();
+  F.old = []; F.oldLikes = Object.create(null); F.oldMy = new Set(); F.oldHidden = new Set(); F.oldCursor = null; F.oldDone = false; F.oldBusy = false; F.oldErr = false;
   clearTimeout(F.timer);
   F.date = date; F.items = []; F.state = "loading";
   if (!store.db){ F.state = "off"; return; }
@@ -629,7 +619,7 @@ function startFeed(){
     F.items = snap.docs.map(d => ({id:d.id, ...d.data()}))
       .filter(x => x.date === date && typeof x.text === "string")
       .sort((a, b) => (b.updatedAt || b.at || 0) - (a.updatedAt || a.at || 0));
-    if (!snap.metadata.fromCache){ F.state = "live"; clearTimeout(F.timer); }
+    if (!snap.metadata.fromCache){ F.state = "live"; clearTimeout(F.timer); if (!F.old.length && !F.oldDone && !F.oldBusy && !F.oldErr) setTimeout(loadOlder, 0); }
     else if (F.state === "loading") F.state = "cached";
     if (currentView() === "together" && !S.sheet) render();
   }, err => { clearTimeout(F.timer); F.state = "error"; if (currentView() === "together") render(); });
@@ -639,6 +629,47 @@ function startFeed(){
     F.likes = c; F.myLikes = m; if (currentView() === "together" && !S.sheet) render();
   }, () => {});
   F.unsub3 = store.watch("hidden", date, snap => { F.hidden = new Set(snap.docs.map(d => d.id)); if (currentView() === "together" && !S.sheet) render(); }, () => {});
+}
+/* 지난 날 글: 아래로 내리면 20편씩 이어서 불러옵니다 (실시간 아님) */
+async function loadOlder(){
+  const F = S.feed;
+  if (!store.db || F.oldBusy || F.oldDone || !F.date) return;
+  F.oldBusy = true; F.oldErr = false; if (currentView() === "together") render();
+  const before = F.date;
+  try{
+    let q = store.db.collection("feed").where("date", "<", before).orderBy("date", "desc").limit(20);
+    if (F.oldCursor) q = q.startAfter(F.oldCursor);
+    const snap = await withTimeout(q.get());
+    if (F.date !== before) return;
+    const got = snap.docs.map(d => ({id:d.id, ...d.data()})).filter(x => typeof x.text === "string" && typeof x.date === "string");
+    if (snap.docs.length) F.oldCursor = snap.docs[snap.docs.length - 1];
+    if (snap.docs.length < 20) F.oldDone = true;
+    const ids = got.map(x => x.id);
+    const [likes, hidden] = await Promise.all([byIn("likes", "feedId", ids), byIn("hidden", null, ids)]);
+    if (F.date !== before) return;
+    likes.forEach(d => { const x = d.data(); if (typeof x.feedId !== "string") return; F.oldLikes[x.feedId] = (F.oldLikes[x.feedId] || 0) + 1; if (d.id === x.feedId + "_" + store.uid) F.oldMy.add(x.feedId); });
+    hidden.forEach(d => F.oldHidden.add(d.id));
+    F.old = F.old.concat(got);
+  }catch(e){ F.oldErr = true; }
+  finally{ F.oldBusy = false; if (currentView() === "together" && !S.sheet) render(); }
+}
+async function byIn(col, field, ids){
+  const out = [];
+  for (let i = 0; i < ids.length; i += 30){
+    const part = ids.slice(i, i + 30);
+    const key = field || firebase.firestore.FieldPath.documentId();
+    const snap = await withTimeout(store.db.collection(col).where(key, "in", part).get());
+    out.push(...snap.docs);
+  }
+  return out;
+}
+let moreIO = null;
+function watchMore(){
+  if (moreIO) moreIO.disconnect();
+  const el = document.getElementById("feed-more");
+  if (!el || !("IntersectionObserver" in window)) return;
+  moreIO = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) loadOlder(); }, {rootMargin:"600px 0px"});
+  moreIO.observe(el);
 }
 let shownDay = null;
 async function checkNewDay(){
@@ -650,7 +681,7 @@ async function checkNewDay(){
   if (S.sheet && !S.sheet.edit && S.sheet.date !== k) closeSheet();
   if (S.quiz && S.quiz.chosen != null) S.quiz = null;
   await ensureDraw();
-  if (store.db && !S.feedDay) startFeed();
+  if (store.db) startFeed();
   render();
 }
 setInterval(checkNewDay, 30000);
@@ -662,7 +693,15 @@ function reported(){ try{ const a = JSON.parse(localStorage.getItem("beopmun.rep
 async function toggleLike(x){
   if (!store.canShare) return;
   const ref = store.db.collection("likes").doc(x.id + "_" + store.uid);
-  try{ await withTimeout(S.feed.myLikes.has(x.id) ? ref.delete() : ref.set({feedId:x.id, date:x.date, at:Date.now()})); }catch(e){ fail(e); }
+  const F = S.feed, had = x.date === F.date ? F.myLikes.has(x.id) : F.oldMy.has(x.id);
+  try{
+    await withTimeout(had ? ref.delete() : ref.set({feedId:x.id, date:x.date, at:Date.now()}));
+    if (x.date !== F.date){
+      if (had){ F.oldMy.delete(x.id); F.oldLikes[x.id] = Math.max(0, (F.oldLikes[x.id] || 1) - 1); }
+      else { F.oldMy.add(x.id); F.oldLikes[x.id] = (F.oldLikes[x.id] || 0) + 1; }
+      render();
+    }
+  }catch(e){ fail(e); }
 }
 function openReport(x){
   const inp = h("input", {id:"rep-why", maxlength:"200", placeholder:"(선택) 신고하는 까닭"});
@@ -679,47 +718,47 @@ function openReport(x){
     }}, "신고하기"))]);
 }
 function viewTogether(){
-  const F = S.feed, day = F.date || dayKey(), isToday = day === dayKey(), myId = store.uid ? store.feedId(day) : null;
+  const F = S.feed, day = F.date || dayKey(), myId = store.uid ? store.feedId(day) : null;
   const items = F.items.filter(x => !F.hidden.has(x.id) || x.id === myId);
   const live = F.state === "live" || F.state === "cached";
-  const out = [h("div", {class:"row spread"}, h("h2", null, isToday ? "오늘 함께 고른 법문" : "그날 함께 고른 법문"),
-    h("span", {class:"live" + (live ? "" : " off")}, h("i"), live ? (isToday ? "실시간" : "지난 날") : F.state === "loading" ? "불러오는 중" : "연결 안 됨")),
-    h("div", {class:"daynav"},
-      h("strong", null, dayText(day)),
-      h("div", {class:"row spread"},
-        h("button", {class:"btn small", type:"button", disabled:day <= FEED_FIRST, onclick: () => feedGo(shiftDay(day, -1))}, "◀ 전날"),
-        h("button", {class:"btn small" + (isToday ? "" : " primary"), type:"button", disabled:isToday, onclick: () => feedGo(null)}, "오늘"),
-        h("button", {class:"btn small", type:"button", disabled:isToday, onclick: () => feedGo(shiftDay(day, 1))}, "다음날 ▶")))];
+  const out = [h("div", {class:"row spread"}, h("h2", null, "함께 고른 법문"),
+    h("span", {class:"live" + (live ? "" : " off")}, h("i"), live ? "실시간" : F.state === "loading" ? "불러오는 중" : "연결 안 됨"))];
   if (F.state === "off") return out.concat(h("p", {class:"lead"}, navigator.onLine === false ? "인터넷에 연결되면 오늘 다른 사람들이 나눈 법문을 볼 수 있습니다." : "함께 읽기 서버에 연결하지 못했습니다. 오늘의 법문과 마음 돌아보기는 그대로 쓸 수 있습니다."));
   if (F.state === "error") return out.concat(h("p", {class:"lead"}, "나눈 글을 불러오지 못했습니다. 화면을 다시 열어 주세요."));
   if (F.state === "slow" && !items.length) return out.concat(h("p", {class:"lead"}, "나눈 글에 아직 닿지 못했습니다. 연결이 되면 저절로 나타납니다."));
-  out.push(h("p", {class:"lead"}, isToday
-    ? (items.length ? `오늘 ${items.length}명이 이름 없이 법문을 나누었습니다. 새 글은 저절로 나타납니다.` : "오늘은 아직 나눈 글이 없습니다. 첫 법문을 나누어 보세요.")
-    : (items.length ? `이 날 ${items.length}명이 이름 없이 법문을 나누었습니다.` : "이 날은 나눈 글이 없습니다.")));
-  const count = Object.create(null); items.forEach(x => { if (typeof x.pid === "string" && x.pid) count[x.pid] = (count[x.pid] || 0) + 1; });
+  out.push(h("p", {class:"lead"}, (items.length ? `오늘 ${items.length}명이 이름 없이 법문을 나누었습니다.` : "오늘은 아직 나눈 글이 없습니다.") + " 아래로 내리면 지난 날 나눈 글도 이어서 볼 수 있습니다."));
+  const mineOf = x => !!store.uid && x.id === store.feedId(x.date);
+  const all = items.concat(F.old.filter(x => x.date !== day && (!F.oldHidden.has(x.id) || mineOf(x))));
+  const isNew = x => x.date === day, hid = x => isNew(x) ? F.hidden.has(x.id) : F.oldHidden.has(x.id);
+  const count = Object.create(null); all.forEach(x => { if (typeof x.pid === "string" && x.pid){ const k = x.date + "|" + x.pid; count[k] = (count[k] || 0) + 1; } });
   const mine = S.user["j-" + dayKey()];
-  if (!isToday){}
-  else if (!store.canShare) out.push(h("p", {class:"note"}, "지금은 함께 읽기에 글을 나눌 수 없습니다. 내가 고른 법문은 이 폰에만 남습니다."));
+  if (!store.canShare) out.push(h("p", {class:"note"}, "지금은 함께 읽기에 글을 나눌 수 없습니다. 내가 고른 법문은 이 폰에만 남습니다."));
   else if (!mine) out.push(h("div", null, h("a", {class:"btn primary", href:"#today"}, "오늘의 법문 고르러 가기")));
   else if (!mine.shared) out.push(h("p", {class:"note"}, "내가 오늘 고른 법문은 아직 나누지 않았습니다. 오늘의 법문 화면에서 나눌 수 있습니다."));
   const rep = reported();
-  items.forEach(x => {
-    const isMine = x.id === myId, n = F.likes[x.id] || 0, liked = F.myLikes.has(x.id), tools = [];
+  all.forEach(x => {
+    const isMine = mineOf(x), n = (isNew(x) ? F.likes[x.id] : F.oldLikes[x.id]) || 0, liked = isNew(x) ? F.myLikes.has(x.id) : F.oldMy.has(x.id), tools = [];
     if (store.canShare && !isMine){
       tools.push(h("button", {class:"btn small" + (liked ? " primary" : ""), type:"button", "aria-pressed":String(liked), onclick: () => toggleLike(x)}, "합장" + (n ? " " + n : "")));
       tools.push(rep.includes(x.id) ? h("span", {class:"note"}, "신고했습니다") : h("button", {class:"btn small quiet", type:"button", onclick: () => openReport(x)}, "신고"));
     } else if (n) tools.push(h("span", {class:"pill"}, "합장 " + n));
     out.push(h("article", {class:"card entry"},
-      h("div", {class:"row spread"}, h("span", {class:"when"}, timeText(x.updatedAt || x.at)),
-        h("span", {class:"row"}, count[x.pid] > 1 ? h("span", {class:"pill"}, `같은 법문 ${count[x.pid]}명`) : null, isMine ? h("span", {class:"pill mine"}, "내가 나눈 글") : null)),
-      isMine && F.hidden.has(x.id) ? h("p", {class:"note"}, "관리자가 가린 글입니다. 다른 사람에게는 보이지 않습니다.") : null,
+      h("div", {class:"row spread"}, h("span", {class:"when"}, (x.date === day ? "오늘" : shortDay(x.date)) + " " + timeText(x.at || x.updatedAt)),
+        h("span", {class:"row"}, count[x.date + "|" + x.pid] > 1 ? h("span", {class:"pill"}, `같은 법문 ${count[x.date + "|" + x.pid]}명`) : null, isMine ? h("span", {class:"pill mine"}, "내가 나눈 글") : null)),
+      isMine && hid(x) ? h("p", {class:"note"}, "관리자가 가린 글입니다. 다른 사람에게는 보이지 않습니다.") : null,
       h("div", {class:"scripture"}, clip(x.text, 4000)),
       h("div", {class:"source"}, clip(x.source, 200)),
       joinNote(x.reason, x.note) ? [h("h3", null, "감상"), h("div", {class:"reason"}, clip(joinNote(x.reason, x.note), 8000))] : null,
       tools.length ? h("div", {class:"row"}, tools) : null));
   });
+  if (store.db) out.push(h("div", {id:"feed-more", class:"more"},
+    F.oldBusy ? h("p", {class:"note"}, "지난 글을 불러오는 중입니다…")
+    : F.oldDone ? h("p", {class:"note"}, F.old.length || items.length ? "처음 나눈 글까지 모두 보았습니다." : "")
+    : h("button", {class:"btn", type:"button", onclick: () => loadOlder()}, F.oldErr ? "다시 불러오기" : "지난 글 더 보기")));
+  requestAnimationFrame(watchMore);
   return out;
 }
+function shortDay(key){ const [, m, d] = key.split("-").map(Number); return `${m}월 ${d}일`; }
 
 /* ───── 원문 펼쳐 적기 (새 화면) ───── */
 let sheetEl = null, sheetReturn = null, draftTimer = null;

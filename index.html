@@ -267,8 +267,6 @@ const store = {
       await Promise.all([this.loadScript(base + "firebase-auth-compat.js"), this.loadScript(base + "firebase-firestore-compat.js")]);
       const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
       const auth = this.auth = firebase.auth(app);
-      try{ const r = await withTimeout(auth.getRedirectResult(), 8000); if (r && r.user) this.justLinked = true; }
-      catch(e){ if (e && e.code === "auth/credential-already-in-use" && e.credential) await this.switchTo(e.credential); else if (e && e.code) this.authErr = e.code; }
       let user = await withTimeout(new Promise(ok => { const off = auth.onAuthStateChanged(u => { off(); ok(u); }); }), 10000);
       if (!user) user = (await withTimeout(auth.signInAnonymously(), 15000)).user;
       this.setUser(user);
@@ -276,84 +274,10 @@ const store = {
       this.canShare = true;
     }catch(e){ this.db = null; this.canShare = false; }
   },
-  setUser(u){
-    this.uid = u.uid;
-    const g = !u.isAnonymous && (u.providerData || []).find(p => p && p.providerId === "google.com");
-    this.google = g ? {email:g.email || u.email || "", name:g.displayName || u.displayName || ""} : null;
-  },
-  /* 구글 계정에 기록 잇기 — 지금의 이름 없는 번호를 그대로 구글 계정에 붙입니다 */
-  async linkGoogle(){
-    const P = new firebase.auth.GoogleAuthProvider(), u = this.auth.currentUser;
-    P.setCustomParameters({prompt:"select_account"});
-    try{
-      const r = u ? await u.linkWithPopup(P) : await this.auth.signInWithPopup(P);
-      this.setUser(r.user);
-    }catch(e){
-      if (e && e.code === "auth/credential-already-in-use" && e.credential){ await this.switchTo(e.credential); return; }
-      if (e && /popup-blocked|operation-not-supported|web-storage-unsupported/.test(e.code || "")){ await (u ? u.linkWithRedirect(P) : this.auth.signInWithRedirect(P)); return; }
-      throw e;
-    }
-  },
-  /* 이미 다른 폰에서 이은 구글 계정이면 그 계정으로 옮겨 갑니다. 오늘 나눈 글은 옮긴 번호로 다시 올립니다 */
-  async switchTo(cred){
-    const today = dayKey(), t = this.mem.user["j-" + today], oldUid = this.uid;
-    if (this.db && oldUid){
-      if (t && t.shared) await withTimeout(this.db.collection("feed").doc(oldUid + "_" + today).delete()).catch(() => {});
-      await withTimeout(this.db.collection("picks").doc(oldUid + "_" + today).delete()).catch(() => {});
-    }
-    const r = await this.auth.signInWithCredential(cred);
-    this.setUser(r.user);
-    if (this.db && t){
-      if (t.shared) await withTimeout(this.db.collection("feed").doc(this.feedId(today)).set(feedDoc(t))).catch(() => {});
-      this.pick(today, t.pid);
-    }
-  },
-  async signOutGoogle(){
-    await this.auth.signOut();
-    const r = await withTimeout(this.auth.signInAnonymously(), 15000);
-    this.setUser(r.user);
-  },
-  /* ── 구글 계정의 기록 맞추기: users/{uid}/journal/{날짜} ── */
-  jcol(){ return this.db.collection("users/" + this.uid + "/journal"); },
-  syncOn(){ return !!(this.db && this.google); },
-  pending(){ return this.mem.pending || (this.mem.pending = {}); },
-  async pushOne(date){
-    const k = "j-" + date, e = this.mem.user[k], sv = Date.now();
-    const d = e ? {...cleanEntry(e), sv} : {deleted:true, date, sv};
-    await withTimeout(this.jcol().doc(date).set(d));
-    delete this.pending()[date]; this.writeLocal();
-  },
-  async sync(full){
-    if (!this.syncOn()) return 0;
-    const meta = this.mem.sync || {}, mine = meta.uid === this.uid;
-    let q = this.jcol();
-    if (mine && !full && meta.at) q = q.where("sv", ">", meta.at - 6e4);
-    const snap = await withTimeout(q.get(), 20000);
-    let changed = 0, top = mine ? meta.at || 0 : 0;
-    snap.docs.forEach(d => {
-      const r = d.data(), date = d.id; if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-      top = Math.max(top, r.sv || 0);
-      const k = "j-" + date, l = this.mem.user[k], lt = l ? (l.updatedAt || l.at || 0) : 0;
-      if (this.pending()[date]) return;
-      if (r.deleted){ if (l && lt < r.sv){ delete this.mem.user[k]; changed++; } return; }
-      const rt = r.updatedAt || r.at || 0;
-      if (!l || rt > lt){ const {sv, ...e} = r; this.mem.user[k] = e; changed++; }
-      else if (lt > rt) this.pending()[date] = 1;
-    });
-    if (!mine || full) Object.keys(this.mem.user).forEach(k => { if (k.startsWith("j-") && !snap.docs.some(d => d.id === k.slice(2))) this.pending()[k.slice(2)] = 1; });
-    this.mem.sync = {uid:this.uid, at:top || Date.now()};
-    this.writeLocal();
-    for (const date of Object.keys(this.pending())) await this.pushOne(date);
-    this.mem.sync.last = Date.now(); this.writeLocal();
-    return changed;
-  },
-  async wipeServer(){
-    const snap = await withTimeout(this.jcol().get(), 20000);
-    for (const d of snap.docs) await withTimeout(d.ref.delete());
-  },
+  setUser(u){ this.uid = u.uid; },
   async loadUser(){ return {...this.mem.user}; },
-  async putUser(k, data){ this.mem.user[k] = data; if (!this.writeLocal()) throw {code:"quota_exceeded"}; if (k.startsWith("j-")) afterJournal(k.slice(2)); },
-  async delUser(k){ delete this.mem.user[k]; this.writeLocal(); if (k.startsWith("j-")) afterJournal(k.slice(2)); },
+  async putUser(k, data){ this.mem.user[k] = data; if (!this.writeLocal()) throw {code:"quota_exceeded"}; },
+  async delUser(k){ delete this.mem.user[k]; this.writeLocal(); },
   feedId(date){ return this.uid + "_" + date; },
   async putFeed(entry){
     if (!this.canShare) return;
@@ -373,14 +297,6 @@ const store = {
     (pid ? r.set({date, pid:String(pid).slice(0, 80)}) : r.delete()).catch(() => {});
   }
 };
-
-function cleanEntry(e){ const o = {}; ["date", "pid", "text", "source", "reason", "note", "shared", "at", "updatedAt"].forEach(f => { if (e[f] !== undefined) o[f] = e[f]; }); return o; }
-function afterJournal(date){
-  if (store.syncOn()){
-    store.pending()[date] = 1; store.writeLocal();
-    store.pushOne(date).catch(() => {});
-  } else scheduleBackup();
-}
 
 /* ───── 상태 ───── */
 const S = { ready:false, passages:[], user:{}, sel:null, sheet:null, drafts:{}, editing:null, editText:"", confirmDel:null,
@@ -568,36 +484,6 @@ function openDoc(){
     h("p", {class:"note"}, "PDF로 남기려면 '인쇄'를 누른 뒤 프린터 대신 'PDF로 저장'을 고르세요. '문서 파일로 보내기'는 카카오톡·메일로 보내거나 저장할 수 있는 파일을 만듭니다.")]);
   upd();
 }
-function backupCard(){
-  return h("details", {class:"card"},
-    h("summary", null, "기록 내보내기 · 불러오기"),
-    h("div", {class:"row"}, h("button", {class:"btn small primary", type:"button", onclick: openDoc}, "읽기 좋은 문서로 내보내기")),
-    h("p", {class:"note"}, store.google ? "기록은 구글 계정에도 저장됩니다. 따로 보관하려면 파일로 내보내 두세요. 이 파일은 다른 폰의 앱에서 불러올 수 있습니다."
-      : "기록은 이 폰에만 저장됩니다. 폰을 바꾸거나 앱을 지우기 전에 내보내 두었다가 새 폰에서 불러오세요."),
-    h("div", {class:"row"},
-      h("button", {class:"btn small", type:"button", onclick: async () => {
-        const name = `내마음의법문-${dayKey()}.json`;
-        const body = JSON.stringify({app:"beopmun", v:1, exported:new Date().toISOString(), user:S.user}, null, 1);
-        const blob = new Blob([body], {type:"application/json"});
-        try{
-          const file = new File([blob], name, {type:"application/json"});
-          if (navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:"내 마음의 법문 기록"}); return; }
-        }catch(e){ if (e && e.name === "AbortError") return; }
-        const url = URL.createObjectURL(blob);
-        const a = h("a", {href:url, download:name}); document.body.append(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
-      }}, "내보내기"),
-      h("button", {class:"btn small", type:"button", onclick: () => document.getElementById("f-import").click()}, "불러오기"),
-      h("input", {id:"f-import", type:"file", accept:".json,application/json", class:"visually-hidden", tabindex:"-1", "aria-hidden":"true", onchange: ev => {
-        const f = ev.target.files && ev.target.files[0]; if (!f) return;
-        f.text().then(t => { const d = JSON.parse(t); if (!d || d.app !== "beopmun" || typeof d.user !== "object") throw 0;
-          let n = 0; Object.keys(d.user).forEach(k => { const v = d.user[k];
-            if (/^j-\d{4}-\d{2}-\d{2}$/.test(k) && !S.user[k] && v && typeof v.text === "string"){ const c = {...v, shared:false}; S.user[k] = c; store.mem.user[k] = c; n++; } });
-          store.writeLocal(); scheduleBackup(); say(`기록 ${n}일을 불러왔습니다. 같은 날짜에 이미 있는 기록은 그대로 두었습니다.`); render(); })
-        .catch(() => say("이 파일은 내 마음의 법문 기록이 아닙니다.", true))
-        .finally(() => { ev.target.value = ""; });
-      }})));
-}
 function calendar(has){
   const C = S.cal, first = new Date(C.y, C.m, 1).getDay(), days = new Date(C.y, C.m + 1, 0).getDate(), today = dayKey();
   const move = d => { const t = new Date(C.y, C.m + d, 1); C.y = t.getFullYear(); C.m = t.getMonth(); render(); };
@@ -616,85 +502,6 @@ function calendar(has){
       h("strong", null, `${C.y}년 ${C.m + 1}월`),
       h("button", {class:"btn small", type:"button", "aria-label":"다음 달", onclick: () => move(1)}, "›")),
     h("div", {class:"cal"}, cells));
-}
-function accountCard(){
-  if (!store.canShare) return null;
-  if (store.google){
-    const m = store.mem.sync || {}, n = Object.keys(store.pending()).length;
-    return h("details", {class:"card", open:S.acctOpen ? "open" : null, ontoggle: ev => S.acctOpen = ev.target.open},
-      h("summary", null, "구글 계정에 이어짐"),
-      h("p", null, h("strong", null, store.google.name || "구글 계정"), store.google.email ? " · " + store.google.email : ""),
-      h("p", {class:"note"}, "간직한 법문과 감상이 이 계정에 저장됩니다. 다른 폰에서 같은 구글 계정으로 이으면 같은 기록을 볼 수 있습니다. 관리자도 이 기록은 볼 수 없습니다."),
-      h("p", {class:"note"}, n ? `아직 서버에 올리지 못한 기록 ${n}일 — 인터넷이 될 때 저절로 올라갑니다.` : m.last ? `마지막 맞춤: ${dayText(dayKey(new Date(m.last)))} ${timeText(m.last)}` : ""),
-      h("div", {class:"row"},
-        h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(async () => { const c = await store.sync(true); if (c) S.user = await store.loadUser(); S.okmsg = c ? `다른 폰의 기록 ${c}일을 가져왔습니다.` : "기록이 모두 맞추어져 있습니다."; })}, "지금 맞추기"),
-        h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => openSignOut()}, "로그아웃"),
-        h("button", {class:"btn small quiet", type:"button", disabled:S.busy, onclick: () => openWipe()}, "서버 기록 지우기")));
-  }
-  const ok1 = h("input", {type:"checkbox", id:"c-privacy"}), ok2 = h("input", {type:"checkbox", id:"c-age"});
-  const go = h("button", {class:"btn primary small", type:"button", disabled:true, onclick: () => act(async () => {
-    await store.linkGoogle();
-    if (store.google){ const c = await store.sync(true); S.user = await store.loadUser(); setBk({}); S.okmsg = "구글 계정에 기록을 이었습니다." + (c ? ` 다른 폰의 기록 ${c}일도 가져왔습니다.` : ""); }
-  })}, "구글 계정으로 기록 잇기");
-  const upd = () => { go.disabled = !(ok1.checked && ok2.checked) || S.busy; };
-  ok1.addEventListener("change", upd); ok2.addEventListener("change", upd);
-  return h("details", {class:"card"},
-    h("summary", null, "구글 계정에 기록 잇기 (선택)"),
-    h("p", {class:"note"}, "로그인 없이도 그대로 쓸 수 있습니다. 구글 계정에 이어 두면 폰을 바꾸거나 다른 폰에서도 내 기록을 볼 수 있습니다. 지금까지 이 폰에 적은 기록도 함께 올라갑니다."),
-    h("label", {class:"check", for:"c-privacy"}, ok1, h("span", null, h("a", {href:"privacy.html", target:"_blank", rel:"noopener"}, "개인정보 처리방침"), "을 읽었고 동의합니다.")),
-    h("label", {class:"check", for:"c-age"}, ok2, h("span", null, "만 14세 이상입니다.")),
-    h("div", {class:"row"}, go));
-}
-function openSignOut(){
-  const n = Object.keys(store.pending()).length;
-  modal("로그아웃", [
-    h("p", null, "로그아웃하면 이 폰에 있는 기록을 지웁니다. 기록은 구글 계정에 남아 있어, 다시 이으면 돌아옵니다."),
-    n ? h("p", {class:"banner err"}, `아직 서버에 올리지 못한 기록이 ${n}일 있습니다. 인터넷 연결을 확인하고 '지금 맞추기'를 먼저 눌러 주세요.`) : null,
-    h("div", {class:"row"},
-      h("button", {class:"btn danger", type:"button", disabled:!!n, onclick: () => { closeModal(); act(async () => {
-        await store.signOutGoogle();
-        Object.keys(store.mem.user).forEach(k => { if (k.startsWith("j-")) delete store.mem.user[k]; });
-        store.mem.pending = {}; store.mem.sync = {}; store.writeLocal();
-        S.user = await store.loadUser(); startFeed(); S.okmsg = "로그아웃했습니다.";
-      }); }}, "로그아웃하고 이 폰의 기록 지우기"),
-      h("button", {class:"btn", type:"button", onclick: closeModal}, "그만두기"))]);
-}
-function openWipe(){
-  modal("서버 기록 지우기", [
-    h("p", null, "구글 계정에 저장된 내 기록을 서버에서 모두 지우고 계정 잇기를 끊습니다. 이 폰에 있는 기록은 남습니다."),
-    h("p", {class:"note"}, "함께 읽기에 이미 나눈 글은 이름 없이 남습니다. 그 글을 지우고 싶으시면 앱 안내의 이메일로 알려 주세요."),
-    h("div", {class:"row"},
-      h("button", {class:"btn danger", type:"button", onclick: () => { closeModal(); act(async () => {
-        await store.wipeServer();
-        await store.signOutGoogle();
-        store.mem.pending = {}; store.mem.sync = {}; store.writeLocal();
-        startFeed(); S.okmsg = "서버의 기록을 지우고 계정 잇기를 끊었습니다.";
-      }); }}, "모두 지우기"),
-      h("button", {class:"btn", type:"button", onclick: closeModal}, "그만두기"))]);
-}
-function autoBackupCard(){
-  if (store.google) return null;
-  const B = bk(), kids = [h("summary", null, B.code ? "자동 백업 켜짐" : "자동 백업")];
-  if (!store.canShare) kids.push(h("p", {class:"note"}, "인터넷에 연결되면 자동 백업을 쓸 수 있습니다."));
-  else if (!B.code){
-    kids.push(h("p", {class:"note"}, "켜 두면 법문을 간직할 때마다 기록이 암호로 잠겨 서버에 보관됩니다. 폰을 바꿔도 백업 코드만 있으면 되찾을 수 있고, 코드 없이는 관리자도 내용을 볼 수 없습니다."),
-      h("div", {class:"row"}, h("button", {class:"btn primary small", type:"button", disabled:S.busy,
-        onclick: () => act(async () => { setBk({code:newCode(), last:0}); await doBackup(); })}, "자동 백업 켜기")));
-  } else {
-    kids.push(h("p", {class:"note"}, B.last ? `마지막 백업: ${dayText(dayKey(new Date(B.last)))} ${timeText(B.last)}` : "아직 백업되지 않았습니다. '지금 백업'을 눌러 주세요."),
-      h("p", null, "백업 코드 ", h("code", {id:"bk-code"}, B.code)),
-      h("p", {class:"note"}, "이 코드를 적어 두거나 나에게 보내는 메시지로 남겨 두세요. 새 폰에서 이 코드를 넣으면 기록이 돌아옵니다."),
-      h("div", {class:"row"},
-        h("button", {class:"btn small", type:"button", onclick: async () => {
-          try{ await navigator.clipboard.writeText(B.code); say("백업 코드를 복사했습니다."); }
-          catch(e){ say("복사하지 못했습니다. 코드를 직접 적어 주세요.", true); } }}, "코드 복사"),
-        h("button", {class:"btn small", type:"button", disabled:S.busy, onclick: () => act(doBackup)}, "지금 백업"),
-        h("button", {class:"btn small", type:"button", onclick: () => { setBk({}); render(); }}, "자동 백업 끄기")));
-  }
-  if (store.canShare) kids.push(h("form", {class:"stack", onsubmit: ev => { ev.preventDefault(); const v = document.getElementById("bk-in").value; act(() => restoreBackup(v)); }},
-    h("label", {for:"bk-in"}, "다른 폰에서 쓰던 백업 코드로 기록 되찾기", h("input", {id:"bk-in", placeholder:"XXXX-XXXX-XXXX-XXXX", autocomplete:"off"})),
-    h("div", null, h("button", {class:"btn small", type:"submit", disabled:S.busy}, "기록 되찾기"))));
-  return h("details", {class:"card"}, kids);
 }
 function viewJournal(){
   const keys = Object.keys(S.user).filter(k => k.startsWith("j-")).map(k => k.slice(2)).sort().reverse();
@@ -716,7 +523,7 @@ function viewJournal(){
     h("div", null, h("a", {class:"btn", href:"#today"}, "오늘의 법문으로")));
   else if (!inMonth.length) out.push(h("p", {class:"lead"}, "이 달에는 간직한 법문이 없습니다."));
   inMonth.forEach(k => out.push(entryCard(k, S.user["j-" + k], k === dayKey())));
-  out.push(accountCard(), autoBackupCard(), backupCard());
+  if (keys.length) out.push(h("div", {class:"row"}, h("button", {class:"btn small", type:"button", onclick: openDoc}, "읽기 좋은 문서로 내보내기")));
   return out;
 }
 
@@ -938,7 +745,11 @@ function viewTogether(){
   const items = F.items.filter(x => !F.hidden.has(x.id) || x.id === myId);
   const live = F.state === "live" || F.state === "cached";
   const out = [h("div", {class:"row spread"}, h("h2", null, "함께 고른 법문"),
-    h("span", {class:"live" + (live ? "" : " off")}, h("i"), live ? "실시간" : F.state === "loading" ? "불러오는 중" : "연결 안 됨"))];
+    h("span", {class:"live" + (live ? "" : " off")}, h("i"), live ? "실시간" : F.state === "loading" ? "불러오는 중" : "연결 안 됨")),
+    h("div", {class:"row", role:"group", "aria-label":"보기"},
+      h("button", {class:"btn small" + (S.tf !== "mine" ? " primary" : ""), type:"button", "aria-pressed":String(S.tf !== "mine"), onclick: () => { S.tf = "all"; render(); }}, "모두의 글"),
+      h("button", {class:"btn small" + (S.tf === "mine" ? " primary" : ""), type:"button", "aria-pressed":String(S.tf === "mine"), onclick: () => { S.tf = "mine"; loadMine(); render(); }}, "내 글"))];
+  if (S.tf === "mine") return out.concat(viewMine());
   if (F.state === "off") return out.concat(h("p", {class:"lead"}, navigator.onLine === false ? "인터넷에 연결되면 오늘 다른 사람들이 나눈 법문을 볼 수 있습니다." : "함께 읽기 서버에 연결하지 못했습니다. 오늘의 법문과 마음 돌아보기는 그대로 쓸 수 있습니다."));
   if (F.state === "error") return out.concat(h("p", {class:"lead"}, "나눈 글을 불러오지 못했습니다. 화면을 다시 열어 주세요."));
   if (F.state === "slow" && !items.length) return out.concat(h("p", {class:"lead"}, "나눈 글에 아직 닿지 못했습니다. 연결이 되면 저절로 나타납니다."));
@@ -972,6 +783,41 @@ function viewTogether(){
     : F.oldDone ? h("p", {class:"note"}, F.old.length || items.length ? "처음 나눈 글까지 모두 보았습니다." : "")
     : h("button", {class:"btn", type:"button", onclick: () => loadOlder()}, F.oldErr ? "다시 불러오기" : "지난 글 더 보기")));
   requestAnimationFrame(watchMore);
+  return out;
+}
+/* 내가 나눈 글: 서버에 보관된 내 글을 모두 불러옵니다 */
+async function loadMine(){
+  const M = S.mine || (S.mine = {});
+  if (!store.db || !store.uid || M.busy) return;
+  M.busy = true; M.err = false;
+  try{
+    const ID = firebase.firestore.FieldPath.documentId();
+    const snap = await withTimeout(store.db.collection("feed").orderBy(ID).startAt(store.uid + "_").endAt(store.uid + "_\uf8ff").get(), 20000);
+    const items = snap.docs.map(d => ({id:d.id, ...d.data()})).filter(x => typeof x.text === "string" && typeof x.date === "string").sort((a, b) => a.date < b.date ? 1 : -1);
+    const ids = items.map(x => x.id), likes = Object.create(null);
+    const [ls, hs] = await Promise.all([byIn("likes", "feedId", ids), byIn("hidden", null, ids)]);
+    ls.forEach(d => { const f = d.data().feedId; if (typeof f === "string") likes[f] = (likes[f] || 0) + 1; });
+    Object.assign(M, {items, likes, hidden:new Set(hs.map(d => d.id)), loaded:true});
+  }catch(e){ M.err = true; }
+  finally{ M.busy = false; if (currentView() === "together" && S.tf === "mine" && !S.sheet) render(); }
+}
+function viewMine(){
+  const M = S.mine || {}, out = [];
+  if (!store.db) return [h("p", {class:"lead"}, "인터넷에 연결되면 내가 나눈 글을 볼 수 있습니다.")];
+  if (M.err) return [h("p", {class:"lead"}, "내 글을 불러오지 못했습니다."), h("div", null, h("button", {class:"btn", type:"button", onclick: () => { loadMine(); render(); }}, "다시 불러오기"))];
+  if (!M.loaded) return [h("p", {class:"lead"}, "내 글을 불러오는 중입니다…")];
+  out.push(h("p", {class:"lead"}, M.items.length ? `내가 함께 읽기에 나눈 글 ${M.items.length}편입니다. 받은 합장 ${Object.values(M.likes).reduce((a, b) => a + b, 0)}번.` : "아직 함께 읽기에 나눈 글이 없습니다."),
+    h("p", {class:"note"}, "나누지 않고 간직만 한 법문은 '마음 돌아보기'에 있습니다."));
+  M.items.forEach(x => {
+    const n = M.likes[x.id] || 0;
+    out.push(h("article", {class:"card entry"},
+      h("div", {class:"row spread"}, h("span", {class:"when"}, (x.date === dayKey() ? "오늘" : dayText(x.date)) + " " + timeText(x.at || x.updatedAt)),
+        n ? h("span", {class:"pill"}, "합장 " + n) : null),
+      M.hidden.has(x.id) ? h("p", {class:"note"}, "관리자가 가린 글입니다. 다른 사람에게는 보이지 않습니다.") : null,
+      h("div", {class:"scripture"}, clip(x.text, 4000)),
+      h("div", {class:"source"}, clip(x.source, 200)),
+      joinNote(x.reason, x.note) ? [h("h3", null, "감상"), h("div", {class:"reason"}, clip(joinNote(x.reason, x.note), 8000))] : null));
+  });
   return out;
 }
 function shortDay(key){ const [, m, d] = key.split("-").map(Number); return `${m}월 ${d}일`; }
@@ -1144,10 +990,10 @@ function openInstall(){
 function openAbout(){
   modal("앱 안내", [h("ul", {class:"steps"},
     h("li", null, "법문은 정전과 대종경 원문입니다. 틀린 글자를 보시면 '오탈자 알리기'로 알려 주세요."),
-    h("li", null, "고른 법문과 적은 글은 이 폰에 저장됩니다. '마음 돌아보기'에서 구글 계정에 이어 두면 다른 폰에서도 볼 수 있습니다. 이 기록은 관리자도 볼 수 없습니다."),
+    h("li", null, "고른 법문과 적은 글은 이 폰에 저장되고, '함께 읽기에 나누기'를 켠 글은 앱 서버에도 보관됩니다. '함께'의 '내 글'에서 내가 나눈 글을 모아 볼 수 있습니다."),
     h("li", null, "'함께 읽기에 나누기'를 켠 글만 다른 사람에게 이름 없이 보이고, 법문 공부와 교화 연구를 위해 이름 없이 모여 분석됩니다."),
     h("li", null, "어떤 법문이 많이 선택되는지 알기 위해, 고른 법문의 출처만 이름 없이 통계에 쓰입니다. 적은 글은 포함되지 않습니다."),
-    h("li", null, "로그인과 비용 없이 쓸 수 있습니다. 구글 계정 잇기는 원하는 분만 하시면 됩니다.")),
+    h("li", null, "로그인과 비용 없이 쓸 수 있습니다.")),
     h("p", null, h("a", {href:"privacy.html", target:"_blank", rel:"noopener"}, "개인정보 처리방침")),
     h("p", {class:"note"}, "만든 이: 윤관명 교무", h("br"), "이메일: seesun72@gmail.com")]);
 }
@@ -1225,64 +1071,6 @@ async function openCard(text, source){
       h("button", {class:"btn", type:"button", onclick: async ev => { const b = ev.currentTarget; try{ await navigator.clipboard.writeText(msg); b.textContent = "주소를 복사했습니다"; }catch(e){ b.textContent = APP_URL; } }}, "앱 주소 복사")),
     h("p", {class:"note"}, share ? "'보내기'를 누르면 카드와 함께 앱으로 가는 주소가 전해집니다. 주소가 빠지는 앱에서는 '앱 주소 복사'를 눌러 붙여 넣어 주세요."
       : "사진으로 저장하고 '앱 주소 복사'를 눌러, 카카오톡이나 문자에 함께 붙여 보내세요.")]);
-}
-
-/* ───── 자동 백업 (암호로 잠가 서버에 보관) ───── */
-const enc = new TextEncoder();
-const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
-const b64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
-const unb64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
-const sha = s => crypto.subtle.digest("SHA-256", enc.encode(s));
-const normCode = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-const fmtCode = c => c.replace(/(.{4})(?=.)/g, "$1-");
-function newCode(){ const al = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r = crypto.getRandomValues(new Uint8Array(16)); return fmtCode([...r].map(x => al[x % 32]).join("")); }
-function bk(){ try{ const b = JSON.parse(localStorage.getItem("beopmun.backup") || "{}"); return b && typeof b === "object" ? b : {}; }catch(e){ return {}; } }
-function setBk(b){ try{ localStorage.setItem("beopmun.backup", JSON.stringify(b)); }catch(e){} }
-async function bkKeys(code){
-  const c = normCode(code);
-  return {id:hex(await sha("id:" + c)).slice(0, 40), wkey:hex(await sha("w:" + c)),
-    key:await crypto.subtle.importKey("raw", await sha("k:" + c), "AES-GCM", false, ["encrypt", "decrypt"])};
-}
-async function doBackup(){
-  const B = bk(); if (!B.code || !store.canShare) return;
-  const K = await bkKeys(B.code), entries = {};
-  Object.keys(S.user).forEach(k => {
-    if (!k.startsWith("j-")) return;
-    const e = S.user[k];
-    entries[k.slice(2)] = Object.assign({pid:e.pid, reason:e.reason || "", note:e.note || "", at:e.at || 0}, byId(e.pid) ? {} : {text:e.text, source:e.source});
-  });
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({name:"AES-GCM", iv}, K.key, enc.encode(JSON.stringify({v:1, entries, quiz:S.user.quiz || null})));
-  await withTimeout(store.db.collection("backups").doc(K.id).set({wkey:K.wkey, iv:b64(iv), blob:b64(new Uint8Array(ct)), updatedAt:Date.now()}));
-  setBk({code:B.code, last:Date.now()});
-}
-let bkTimer = null;
-function scheduleBackup(){
-  if (!bk().code) return;
-  clearTimeout(bkTimer);
-  bkTimer = setTimeout(() => { doBackup().then(() => { if (S.ready && currentView() === "journal" && !S.sheet) render(); }).catch(() => {}); }, 3000);
-}
-async function restoreBackup(raw){
-  const code = normCode(raw);
-  if (code.length !== 16){ S.warn = "백업 코드는 글자와 숫자 16자입니다. 다시 확인해 주세요."; return; }
-  const K = await bkKeys(code), snap = await withTimeout(store.db.collection("backups").doc(K.id).get());
-  if (!snap.exists){ S.warn = "이 코드로 보관된 기록을 찾지 못했습니다."; return; }
-  const d = snap.data(); let data;
-  try{ data = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM", iv:unb64(d.iv)}, K.key, unb64(d.blob)))); }
-  catch(e){ S.warn = "보관된 기록을 열지 못했습니다. 코드를 다시 확인해 주세요."; return; }
-  let n = 0;
-  Object.keys(data.entries || {}).forEach(date => {
-    const k = "j-" + date, v = data.entries[date];
-    if (S.user[k] || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !v) return;
-    const p = byId(v.pid);
-    const e = {date, pid:v.pid, text:p ? p.text : v.text, source:p ? sourceLabel(p) : v.source, reason:v.reason || "", note:v.note || "", shared:false, at:v.at || 0};
-    if (typeof e.text !== "string") return;
-    S.user[k] = e; store.mem.user[k] = e; n++;
-  });
-  if (!S.user.quiz && data.quiz){ S.user.quiz = data.quiz; store.mem.user.quiz = data.quiz; }
-  store.writeLocal(); setBk({code:fmtCode(code), last:0});
-  await doBackup();
-  S.okmsg = `기록 ${n}일을 되찾았습니다. 이 폰에서도 같은 코드로 자동 백업됩니다.`;
 }
 
 /* ───── 관리자 ───── */
@@ -1412,10 +1200,6 @@ render();
   shownDay = dayKey();
   S.feed.state = "loading";
   store.init().then(async () => { startFeed(); render();
-    if (store.syncOn()){ try{ if (await store.sync(store.justLinked)){ S.user = await store.loadUser(); render(); } }catch(e){} }
-    else if (bk().code && (Date.now() - (bk().last || 0) > 864e5)) scheduleBackup();
-    if (store.justLinked){ S.okmsg = ""; say("구글 계정에 기록을 이었습니다."); }
-    else if (store.authErr) say("구글 계정에 잇지 못했습니다. 다시 해 주세요.", true);
     const t = S.user["j-" + dayKey()]; if (t) store.pick(t.date, t.pid); });
   await ensureDraw();
   render();

@@ -155,6 +155,11 @@ h3.sec{font-family:var(--f-scripture);font-size:1.1rem;margin:14px 0 0}
 .tile span{font-size:.82rem;color:var(--muted)}
 .bars{display:flex;align-items:flex-end;gap:2px;height:90px;border-bottom:1px solid var(--line)}
 .bars i{flex:1;background:var(--accent);min-height:1px;border-radius:2px 2px 0 0}
+#printdoc{display:none}
+@media print{
+  body.printing > *:not(#printdoc){display:none !important}
+  body.printing #printdoc{display:block}
+}
 </style>
 </head>
 <body>
@@ -497,10 +502,78 @@ function entryCard(key, e, isToday){
   }
   return h("article", {class:"card entry", id:"e-" + key}, kids);
 }
+/* ───── 읽기 좋은 문서로 내보내기 ───── */
+const escH = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;"}[c]));
+const DOC_CSS = `.bm-doc{font-family:"Gowun Batang","Noto Serif KR","AppleMyungjo","Batang",serif;color:#1b2a2a;line-height:1.8;max-width:720px;margin:0 auto;padding:32px 24px}
+.bm-doc h1{font-size:26px;color:#1f5c4d;margin:0 0 4px}.bm-doc .sub{color:#5a6966;font-size:14px;margin:0 0 6px}
+.bm-doc .ring{display:inline-block;width:26px;height:26px;border:5px solid #e0b422;border-radius:50%;vertical-align:-6px;margin-right:10px}
+.bm-doc section{border-top:1px solid #cfd6cf;padding:18px 0;break-inside:avoid;page-break-inside:avoid}
+.bm-doc h2{font-size:17px;margin:0 0 8px;color:#1f5c4d}.bm-doc .src{color:#5a6966;font-size:14px;margin:6px 0 0}
+.bm-doc blockquote{margin:0;padding:10px 14px;background:#f1f3ee;border-left:4px solid #e0b422;font-size:17px;white-space:pre-wrap}
+.bm-doc .memo{margin:12px 0 0;white-space:pre-wrap}.bm-doc .memo b{display:block;font-size:14px;color:#5a6966;font-weight:600}
+.bm-doc .shared{font-size:12px;color:#1f5c4d;border:1px solid #1f5c4d;border-radius:10px;padding:0 7px;margin-left:8px;vertical-align:2px}
+.bm-doc .foot{color:#5a6966;font-size:13px;border-top:1px solid #cfd6cf;padding-top:12px}`;
+function journalDoc(keys, label){
+  const es = keys.map(k => S.user["j-" + k]).filter(Boolean);
+  const nj = es.filter(e => /^정전/.test(e.source || "")).length, nd = es.filter(e => /^대종경/.test(e.source || "")).length;
+  const secs = es.map(e => `<section><h2>${escH(dayText(e.date))}${e.shared ? '<span class="shared">함께 나눔</span>' : ""}</h2>
+<blockquote>${escH(e.text)}</blockquote><p class="src">${escH(e.source)}</p>
+${joinNote(e.reason, e.note) ? `<div class="memo"><b>나의 감상</b>${escH(joinNote(e.reason, e.note))}</div>` : ""}</section>`).join("\n");
+  return `<div class="bm-doc"><h1><span class="ring"></span>내 마음의 법문</h1>
+<p class="sub">나의 법문 기록 · ${escH(label)} · 모두 ${es.length}일 (정전 ${nj} · 대종경 ${nd})</p>
+${secs || "<p>이 기간에는 간직한 법문이 없습니다.</p>"}
+<p class="foot">${escH(dayText(dayKey()))}에 만듦 · 내 마음의 법문 https://seesun72.github.io/beopmun/</p></div>`;
+}
+function docRange(r){
+  const all = Object.keys(S.user).filter(k => k.startsWith("j-")).map(k => k.slice(2)).sort();
+  const C = S.cal, mk = `${C.y}-${pad(C.m + 1)}`, y = String(C.y);
+  return r === "month" ? {keys:all.filter(k => k.startsWith(mk)), label:`${C.y}년 ${C.m + 1}월`}
+    : r === "year" ? {keys:all.filter(k => k.startsWith(y + "-")), label:`${C.y}년`}
+    : {keys:all, label:all.length ? `${dayText(all[0]).replace(/ .요일$/, "")} ~ ${dayText(all[all.length - 1]).replace(/ .요일$/, "")}` : "전체"};
+}
+function printDoc(html){
+  let el = document.getElementById("printdoc");
+  if (!el){ el = h("div", {id:"printdoc"}); document.body.append(el); }
+  el.innerHTML = `<style>${DOC_CSS}</style>` + html;
+  document.body.classList.add("printing");
+  const done = () => { document.body.classList.remove("printing"); el.innerHTML = ""; removeEventListener("afterprint", done); };
+  addEventListener("afterprint", done);
+  setTimeout(() => { try{ window.print(); }catch(e){ done(); } }, 50);
+}
+async function saveDoc(html, label){
+  const name = `내마음의법문-기록-${dayKey()}.html`;
+  const body = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>내 마음의 법문 · ${escH(label)}</title><style>body{margin:0;background:#fff}${DOC_CSS}</style></head><body>${html}<\/body><\/html>`;
+  const blob = new Blob([body], {type:"text/html"});
+  try{
+    const file = new File([blob], name, {type:"text/html"});
+    if (navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:"내 마음의 법문 기록"}); return; }
+  }catch(e){ if (e && e.name === "AbortError") return; }
+  const url = URL.createObjectURL(blob);
+  const a = h("a", {href:url, download:name}); document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+function openDoc(){
+  let r = "all";
+  const C = S.cal, opts = [["all", "전체"], ["year", `${C.y}년`], ["month", `${C.y}년 ${C.m + 1}월`]];
+  const count = h("p", {class:"note"});
+  const upd = () => { count.textContent = `${docRange(r).keys.length}일의 기록이 들어갑니다.`; };
+  modal("읽기 좋은 문서로 내보내기", [
+    h("p", null, "고른 법문과 감상을 날짜순으로 엮은 문서를 만듭니다."),
+    h("div", {class:"row", role:"radiogroup", "aria-label":"기간"}, opts.map(([v, t]) =>
+      h("label", {class:"check"}, h("input", {type:"radio", name:"doc-r", value:v, checked:v === r ? "checked" : null, onchange: () => { r = v; upd(); }}), h("span", null, t)))),
+    count,
+    h("div", {class:"row"},
+      h("button", {class:"btn primary", type:"button", onclick: () => { const d = docRange(r); closeModal(); printDoc(journalDoc(d.keys, d.label)); }}, "인쇄 · PDF로 저장"),
+      h("button", {class:"btn", type:"button", onclick: () => { const d = docRange(r); saveDoc(journalDoc(d.keys, d.label), d.label); }}, "문서 파일로 보내기")),
+    h("p", {class:"note"}, "PDF로 남기려면 '인쇄'를 누른 뒤 프린터 대신 'PDF로 저장'을 고르세요. '문서 파일로 보내기'는 카카오톡·메일로 보내거나 저장할 수 있는 파일을 만듭니다.")]);
+  upd();
+}
 function backupCard(){
   return h("details", {class:"card"},
     h("summary", null, "기록 내보내기 · 불러오기"),
-    h("p", {class:"note"}, "기록은 이 폰에만 저장됩니다. 폰을 바꾸거나 앱을 지우기 전에 내보내 두었다가 새 폰에서 불러오세요."),
+    h("div", {class:"row"}, h("button", {class:"btn small primary", type:"button", onclick: openDoc}, "읽기 좋은 문서로 내보내기")),
+    h("p", {class:"note"}, store.google ? "기록은 구글 계정에도 저장됩니다. 따로 보관하려면 파일로 내보내 두세요. 이 파일은 다른 폰의 앱에서 불러올 수 있습니다."
+      : "기록은 이 폰에만 저장됩니다. 폰을 바꾸거나 앱을 지우기 전에 내보내 두었다가 새 폰에서 불러오세요."),
     h("div", {class:"row"},
       h("button", {class:"btn small", type:"button", onclick: async () => {
         const name = `내마음의법문-${dayKey()}.json`;

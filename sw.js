@@ -1,7 +1,7 @@
 // 내 마음의 법문 — 오프라인에서도 열리도록 앱 파일을 폰에 보관합니다.
 // 화면(index.html)은 인터넷이 되면 늘 새로 받아 업데이트가 바로 반영되고, 안 되면 보관본으로 엽니다.
-const VERSION = "beopmun-2026-11-18-2";
-const SHELL = ["./", "index.html", "jeongjeon.js", "daejonggyeong.js", "config.js", "manifest.webmanifest",
+const VERSION = "beopmun-2026-11-18-3";
+const SHELL = ["./", "index.html", "jeongjeon.js", "daejonggyeong.js", "config.js", "manifest.webmanifest", "privacy.html",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 const fresh = url => fetch(new Request(url, {cache:"no-cache", credentials:"same-origin"}));
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => Promise.all(SHELL.map(u => fresh(u).then(r => { if (r.ok) return c.put(u, r); })))).then(() => self.skipWaiting())); });
@@ -12,8 +12,9 @@ self.addEventListener("fetch", e => {
   const req = e.request, u = new URL(req.url);
   if (req.method !== "GET" || u.origin !== location.origin) return; // 함께 읽기 서버 요청은 그대로 통과
   if (req.mode === "navigate"){
-    e.respondWith(fresh(req.url).then(r => { if (r.ok){ const c = r.clone(); caches.open(VERSION).then(ca => ca.put("index.html", c)); } return r; })
-      .catch(() => caches.match("index.html").then(hit => hit || caches.match("./"))));
+    const shell = /\/(index\.html)?$/.test(u.pathname);
+    e.respondWith(fresh(req.url).then(r => { if (r.ok && shell){ const c = r.clone(); caches.open(VERSION).then(ca => ca.put("index.html", c)); } return r; })
+      .catch(() => shell ? caches.match("index.html").then(hit => hit || caches.match("./")) : caches.match(req, {ignoreSearch:true}).then(hit => hit || caches.match("index.html"))));
     return;
   }
   e.respondWith(caches.open(VERSION).then(async c => {

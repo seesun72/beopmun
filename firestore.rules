@@ -79,5 +79,18 @@ service cloud.firestore {
       }
     }
     match /{document=**} { allow read, write: if false; }
+
+    // 구글 계정에 이은 사람의 개인 기록 — 본인만 읽고 씁니다 (관리자도 못 봄)
+    match /users/{uid}/journal/{date} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.sv is int
+        && request.resource.data.keys().hasOnly(['date','pid','text','source','reason','note','shared','at','updatedAt','sv','deleted'])
+        && (!('text' in request.resource.data) || request.resource.data.text.size() <= 20000)
+        && (!('note' in request.resource.data) || request.resource.data.note.size() <= 20000)
+        && (!('reason' in request.resource.data) || request.resource.data.reason.size() <= 20000);
+    }
   }
 }

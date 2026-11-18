@@ -64,33 +64,7 @@ service cloud.firestore {
         && request.resource.data.date is string && request.resource.data.date.size() == 10
         && request.resource.data.pid is string && request.resource.data.pid.size() <= 80;
     }
-    // 자동 백업: 암호문만 보관. 백업 코드를 아는 사람만 문서를 찾아 읽고 고칠 수 있습니다. 목록은 볼 수 없습니다.
-    match /backups/{id} {
-      allow get: if true;
-      allow list: if false;
-      allow create: if signedIn() && validBackup();
-      allow update: if signedIn() && validBackup() && request.resource.data.wkey == resource.data.wkey;
-      function validBackup() {
-        return request.resource.data.keys().hasOnly(['wkey','iv','blob','updatedAt'])
-          && request.resource.data.wkey is string && request.resource.data.wkey.size() == 64
-          && request.resource.data.iv is string && request.resource.data.iv.size() <= 40
-          && request.resource.data.blob is string && request.resource.data.blob.size() < 1000000
-          && request.resource.data.updatedAt is number;
-      }
-    }
     match /{document=**} { allow read, write: if false; }
 
-    // 구글 계정에 이은 사람의 개인 기록 — 본인만 읽고 씁니다 (관리자도 못 봄)
-    match /users/{uid}/journal/{date} {
-      allow read, delete: if request.auth != null && request.auth.uid == uid;
-      allow create, update: if request.auth != null && request.auth.uid == uid
-        && request.auth.token.firebase.sign_in_provider == 'google.com'
-        && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && request.resource.data.sv is int
-        && request.resource.data.keys().hasOnly(['date','pid','text','source','reason','note','shared','at','updatedAt','sv','deleted'])
-        && (!('text' in request.resource.data) || request.resource.data.text.size() <= 20000)
-        && (!('note' in request.resource.data) || request.resource.data.note.size() <= 20000)
-        && (!('reason' in request.resource.data) || request.resource.data.reason.size() <= 20000);
-    }
   }
 }
